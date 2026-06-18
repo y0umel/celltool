@@ -1,0 +1,103 @@
+<Page x:Class="CellTool.Views.HomePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:vm="clr-namespace:CellTool.ViewModels"
+      mc:Ignorable="d"
+      d:DataContext="{d:DesignInstance vm:HomeViewModel}"
+      Title="Home">
+
+    <Page.Resources>
+        <vm:HomeViewModel x:Key="ViewModel" />
+    </Page.Resources>
+
+    <Grid DataContext="{StaticResource ViewModel}" Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Section: Directories -->
+        <GroupBox Grid.Row="0" Header="Data Paths" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Input Directory:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding InputDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Width="80" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Output Directory:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
+                <Button Grid.Row="1" Grid.Column="2" Content="Browse..." Width="80" />
+            </Grid>
+        </GroupBox>
+
+        <!-- Section: Voltage & WL parameters -->
+        <GroupBox Grid.Row="1" Header="Scan Parameters" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="80" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Voltage Min (mV):" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <TextBox Grid.Column="1" Text="{Binding VoltageMin}" />
+
+                <TextBlock Grid.Column="2" Text="Voltage Max (mV):" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <TextBox Grid.Column="3" Text="{Binding VoltageMax}" />
+
+                <TextBlock Grid.Column="4" Text="Step (mV):" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <TextBox Grid.Column="5" Text="{Binding VoltageStep}" />
+
+                <TextBlock Grid.Column="6" Text="WL Count:" VerticalAlignment="Center" Margin="8,0,4,0" />
+                <TextBox Grid.Column="7" Text="{Binding WlCount}" />
+            </Grid>
+        </GroupBox>
+
+        <!-- Section: Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="Start Analysis"
+                    Command="{Binding StartAnalysisCommand}"
+                    IsEnabled="{Binding IsAnalyzing, Converter={StaticResource BooleanInvertConverter}}"
+                    Appearance="Accent"
+                    Width="140"
+                    Margin="0,0,8,0" />
+            <Button Content="Cancel"
+                    Command="{Binding CancelAnalysisCommand}"
+                    IsEnabled="{Binding IsAnalyzing}"
+                    Width="80" />
+        </StackPanel>
+
+        <!-- Progress -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
+            <ui:ProgressBar Value="{Binding Progress}" Height="6" />
+            <TextBlock Text="{Binding StatusMessage}" Margin="0,10,0,0" />
+        </Grid>
+
+        <!-- Log -->
+        <GroupBox Grid.Row="4" Header="Log">
+            <ListBox ItemsSource="{Binding LogEntries}" Margin="4"
+                     FontFamily="Consolas" FontSize="12" />
+        </GroupBox>
+    </Grid>
+
+</Page>

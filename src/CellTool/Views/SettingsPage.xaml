@@ -1,0 +1,46 @@
+<Page x:Class="CellTool.Views.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:vm="clr-namespace:CellTool.ViewModels"
+      mc:Ignorable="d"
+      d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
+      Title="Settings">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <GroupBox Grid.Row="0" Header="Appearance" Margin="0,0,0,12">
+            <StackPanel Margin="8">
+                <ui:ToggleSwitch Content="Dark Theme"
+                                 IsChecked="{Binding IsDarkTheme}"
+                                 Margin="0,4" />
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Grid.Row="1" Header="Configuration" Margin="0,0,0,12">
+            <StackPanel Margin="8" Orientation="Horizontal">
+                <Button Content="Export Config" Width="120" Margin="0,0,8,0"
+                        Command="{Binding ExportConfigCommand}" />
+                <Button Content="Import Config" Width="120"
+                        Command="{Binding ImportConfigCommand}" />
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Grid.Row="2" Header="About" Margin="0,0,0,12">
+            <StackPanel Margin="8">
+                <TextBlock Text="{Binding AboutText}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBlock Text="Built with WPF (.NET 8), WPF-UI, ScottPlot, CommunityToolkit.Mvvm"
+                           FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </GroupBox>
+    </Grid>
+
+</Page>
