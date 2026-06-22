@@ -51,7 +51,7 @@ Core columns (selected die auto-fills from these):
 2. **Page extraction**: MemoryMappedFile reads target WL/page bytes
 3. **Gray code decode**: Assemble target page bits -> raw Gray code; GroupModel row page count selects SLC/MLC/TLC/QLC encoding
 4. **Majority vote**: Ground truth per cell across all voltages. Ties -> higher state
-5. **Increment curve**: One total curve; each point is the number of cells whose first stable raw Gray change occurs at that voltage-code file
+5. **Increment curve**: One total curve; each point is the number of cells whose first stable raw Gray change from the source baseline occurs at that voltage-code file
 6. **0.1% boundaries**: Integrate outward from peak until `(totalCells/8) * 0.1%`. Overlap -> err
 7. **Best read codes**: Deferred while the single total-change curve is used
 8. **Codeword errors**: Source-vs-reference comparison, page-internal codeword slicing

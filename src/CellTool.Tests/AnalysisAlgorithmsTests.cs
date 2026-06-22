@@ -64,6 +64,27 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void ComputeFirstStableRawGrayFlipIncrements_DoesNotCreateFirstPointSpikeWhenBaselineIsFirstScan()
+    {
+        int[][] rawGrayStates =
+        [
+            [6, 6, 4],
+            [6, 4, 4],
+            [0, 4, 2]
+        ];
+        int[] sourceBaseline = [6, 6, 4];
+
+        var increments = AnalysisEngine.ComputeFirstStableRawGrayFlipIncrements(
+            rawGrayStates,
+            sourceBaseline,
+            totalCells: 3,
+            voltageCount: 3,
+            stableWindow: 1);
+
+        Assert.Equal([0, 1, 2], increments);
+    }
+
+    [Fact]
     public void FindBestReadVoltages_SearchesBetweenAdjacentPeaks()
     {
         int[][] states =

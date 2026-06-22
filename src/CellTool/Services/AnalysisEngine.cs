@@ -57,7 +57,6 @@ public class AnalysisEngine
         var modeEncodings = ParseModeEncodings(config, chip);
         var statesPerVoltage = new int[voltageCount][];
         var rawGrayPerVoltage = new int[voltageCount][];
-        var blankRawGray = new int[totalCells];
 
         for (int v = 0; v < voltageCount; v++)
         {
@@ -80,14 +79,6 @@ public class AnalysisEngine
                 var rawGrayCodes = grayDecoder.DecodeRawGrayWl(wlData, pageTotalBytes);
                 Array.Copy(states, 0, allCells, wl * cellCount, cellCount);
                 Array.Copy(rawGrayCodes, 0, allRawGrayCells, wl * cellCount, cellCount);
-
-                if (v == 0)
-                {
-                    var blankWlData = new byte[bitsPerCell * pageTotalBytes];
-                    Array.Fill(blankWlData, (byte)0xFF);
-                    var blankWlStates = grayDecoder.DecodeRawGrayWl(blankWlData, pageTotalBytes);
-                    Array.Copy(blankWlStates, 0, blankRawGray, wl * cellCount, cellCount);
-                }
             }
 
             statesPerVoltage[v] = allCells;
@@ -99,9 +90,12 @@ public class AnalysisEngine
 
         progress?.Report((0.72, "Computing total raw Gray change distribution..."));
         var voltageCodes = files.Select(f => (double)f.Code).ToArray();
+        var sourceRawGray = !string.IsNullOrWhiteSpace(config.ReferenceFilePath)
+            ? ReadRawGrayBaseline(config.ReferenceFilePath, config, chip, groupModel, modeEncodings, wlCount, pageTotalBytes, cellCount, totalCells)
+            : rawGrayPerVoltage[0];
         var totalIncrements = ComputeFirstStableRawGrayFlipIncrements(
             rawGrayPerVoltage,
-            blankRawGray,
+            sourceRawGray,
             totalCells,
             voltageCount,
             stableWindow: 2);
@@ -239,7 +233,7 @@ public class AnalysisEngine
 
     public static double[][] ComputeRawGrayTransitionIncrements(
         int[][] rawGrayPerVoltage,
-        int[] blankRawGrayStates,
+        int[] baselineRawGrayStates,
         int totalCells,
         int[] wlEncoding,
         int voltageCount)
@@ -251,7 +245,7 @@ public class AnalysisEngine
 
         for (int v = 0; v < voltageCount; v++)
         {
-            var previousStates = v == 0 ? blankRawGrayStates : rawGrayPerVoltage[v - 1];
+            var previousStates = v == 0 ? baselineRawGrayStates : rawGrayPerVoltage[v - 1];
             var currentStates = rawGrayPerVoltage[v];
 
             for (int c = 0; c < totalCells; c++)
@@ -275,7 +269,7 @@ public class AnalysisEngine
 
     public static double[] ComputeRawGrayChangeIncrements(
         int[][] rawGrayPerVoltage,
-        int[] blankRawGrayStates,
+        int[] baselineRawGrayStates,
         int totalCells,
         int voltageCount)
     {
@@ -283,7 +277,7 @@ public class AnalysisEngine
 
         for (int v = 0; v < voltageCount; v++)
         {
-            var previousStates = v == 0 ? blankRawGrayStates : rawGrayPerVoltage[v - 1];
+            var previousStates = v == 0 ? baselineRawGrayStates : rawGrayPerVoltage[v - 1];
             var currentStates = rawGrayPerVoltage[v];
 
             for (int c = 0; c < totalCells; c++)
@@ -298,7 +292,7 @@ public class AnalysisEngine
 
     public static double[] ComputeFirstStableRawGrayFlipIncrements(
         int[][] rawGrayPerVoltage,
-        int[] blankRawGrayStates,
+        int[] baselineRawGrayStates,
         int totalCells,
         int voltageCount,
         int stableWindow = 2)
@@ -308,7 +302,7 @@ public class AnalysisEngine
 
         for (int c = 0; c < totalCells; c++)
         {
-            int baseline = blankRawGrayStates[c];
+            int baseline = baselineRawGrayStates[c];
 
             for (int v = 0; v < voltageCount; v++)
             {
@@ -549,26 +543,6 @@ public class AnalysisEngine
         _ => $"{bitsPerCell}-bit/cell"
     };
 
-    private static int[] CreateBlankRawGrayStates(
-        GrayCodeDecoder grayDecoder,
-        ChipInfo chip,
-        int wlCount,
-        int pageTotalBytes,
-        int cellCount,
-        int totalCells)
-    {
-        var blankWlData = new byte[chip.BitsPerCell * pageTotalBytes];
-        Array.Fill(blankWlData, (byte)0xFF);
-
-        var blankWlStates = grayDecoder.DecodeRawGrayWl(blankWlData, pageTotalBytes);
-        var blankStates = new int[totalCells];
-
-        for (int wl = 0; wl < wlCount; wl++)
-            Array.Copy(blankWlStates, 0, blankStates, wl * cellCount, cellCount);
-
-        return blankStates;
-    }
-
     private static (int Left, int Right)[] BuildTransitionPairs(int[] wlEncoding)
     {
         if (wlEncoding.Length < 2)
@@ -599,6 +573,61 @@ public class AnalysisEngine
             return File.ReadAllBytes(referenceFilePath);
 
         return ReadSelectedBytes(referenceFilePath, config, chip, groupModel, wlCount);
+    }
+
+    private int[] ReadRawGrayBaseline(
+        string baselineFilePath,
+        AnalysisConfig config,
+        ChipInfo chip,
+        GroupModel groupModel,
+        Dictionary<int, int[]> modeEncodings,
+        int wlCount,
+        int pageTotalBytes,
+        int cellCount,
+        int totalCells)
+    {
+        var fileInfo = new FileInfo(baselineFilePath);
+        if (!fileInfo.Exists)
+            throw new FileNotFoundException($"Baseline file not found: {baselineFilePath}", baselineFilePath);
+
+        var baseline = new int[totalCells];
+        long selectedByteCount = groupModel.Entries
+            .Take(wlCount)
+            .Sum(entry => (long)entry.PageIndices.Length * pageTotalBytes);
+
+        if (fileInfo.Length == selectedByteCount)
+        {
+            var selectedData = File.ReadAllBytes(baselineFilePath);
+            int offset = 0;
+
+            for (int wl = 0; wl < wlCount; wl++)
+            {
+                var entry = groupModel.Entries[wl];
+                int bitsPerCell = entry.PageIndices.Length;
+                int wlBytes = bitsPerCell * pageTotalBytes;
+                var wlData = new byte[wlBytes];
+                Array.Copy(selectedData, offset, wlData, 0, wlBytes);
+                offset += wlBytes;
+
+                var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
+                var rawGray = decoder.DecodeRawGrayWl(wlData, pageTotalBytes);
+                Array.Copy(rawGray, 0, baseline, wl * cellCount, cellCount);
+            }
+
+            return baseline;
+        }
+
+        for (int wl = 0; wl < wlCount; wl++)
+        {
+            var entry = groupModel.Entries[wl];
+            int bitsPerCell = entry.PageIndices.Length;
+            var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
+            var wlData = fileReader.ReadWlBytes(baselineFilePath, entry, pageTotalBytes, config.StartPage);
+            var rawGray = decoder.DecodeRawGrayWl(wlData, pageTotalBytes);
+            Array.Copy(rawGray, 0, baseline, wl * cellCount, cellCount);
+        }
+
+        return baseline;
     }
 
     private byte[] ReadSelectedBytes(
