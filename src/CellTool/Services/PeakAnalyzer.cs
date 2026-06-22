@@ -11,29 +11,47 @@ public class PeakAnalyzer
         _filterWindow = Math.Max(1, filterWindow);
     }
 
-    public StatePeakInfo[] Analyze(double[][] increments, double[] voltagesMv, int totalCells, int stateCount)
+    public StatePeakInfo[] Analyze(double[][] increments, double[] voltageCodes, int totalCells, int stateCount)
     {
-        int voltageCount = voltagesMv.Length;
-        var expectedPerState = (double)totalCells / stateCount;
+        var labels = Enumerable.Range(0, stateCount)
+            .Select(i => $"State {i}")
+            .ToArray();
+        return Analyze(increments, voltageCodes, totalCells, labels, stateCount);
+    }
+
+    public StatePeakInfo[] Analyze(double[][] increments, double[] voltageCodes, int totalCells, string[] labels)
+    {
+        return Analyze(increments, voltageCodes, totalCells, labels, labels.Length + 1);
+    }
+
+    private StatePeakInfo[] Analyze(
+        double[][] increments,
+        double[] voltageCodes,
+        int totalCells,
+        string[] labels,
+        int expectedBucketCount)
+    {
+        var expectedPerState = (double)totalCells / Math.Max(1, expectedBucketCount);
         var threshold = expectedPerState * 0.001;
 
-        var results = new StatePeakInfo[stateCount];
+        var results = new StatePeakInfo[increments.Length];
 
-        for (int s = 0; s < stateCount; s++)
+        for (int s = 0; s < increments.Length; s++)
         {
             var filtered = LowPassFilter(increments[s]);
             int peakIdx = FindPeakIndex(filtered);
 
-            double? left = FindBoundary(filtered, peakIdx, -1, threshold);
-            double? right = FindBoundary(filtered, peakIdx, +1, threshold);
+            int? left = FindBoundary(filtered, peakIdx, -1, threshold);
+            int? right = FindBoundary(filtered, peakIdx, +1, threshold);
 
             results[s] = new StatePeakInfo
             {
                 StateIndex = s,
-                PeakVoltageMv = voltagesMv[peakIdx],
+                Label = s < labels.Length ? labels[s] : $"Transition {s}",
+                PeakCode = voltageCodes[peakIdx],
                 PeakIncrementValue = filtered[peakIdx],
-                LeftBoundaryMv = left.HasValue ? voltagesMv[left.Value] : null,
-                RightBoundaryMv = right.HasValue ? voltagesMv[right.Value] : null,
+                LeftBoundaryCode = left.HasValue ? voltageCodes[left.Value] : null,
+                RightBoundaryCode = right.HasValue ? voltageCodes[right.Value] : null,
                 TotalCellCount = totalCells
             };
         }
@@ -41,7 +59,7 @@ public class PeakAnalyzer
         return results;
     }
 
-    private double[] LowPassFilter(double[] data)
+    public double[] LowPassFilter(double[] data)
     {
         var result = new double[data.Length];
         int half = _filterWindow / 2;
@@ -61,7 +79,7 @@ public class PeakAnalyzer
         return result;
     }
 
-    private int FindPeakIndex(double[] data)
+    public int FindPeakIndex(double[] data)
     {
         int peakIdx = 0;
         double peakVal = data[0];
@@ -76,33 +94,24 @@ public class PeakAnalyzer
         return peakIdx;
     }
 
-    private int? FindBoundary(double[] data, int startIdx, int direction, double threshold)
+    public int? FindBoundary(double[] data, int startIdx, int direction, double threshold)
     {
         double sum = 0;
-        int i = startIdx;
-        int? lastFallingIdx = null;
-        bool wasFalling = false;
+        int i = startIdx + direction;
+        double previous = data[startIdx];
 
         while (i >= 0 && i < data.Length)
         {
-            sum += data[i];
+            double current = data[i];
 
-            bool isFalling = false;
-            if (direction < 0 && i > 0)
-                isFalling = data[i] < data[i - 1];
-            else if (direction > 0 && i < data.Length - 1)
-                isFalling = data[i] < data[i + 1];
+            if (current > previous && sum < threshold)
+                return null;
 
-            if (isFalling)
-                lastFallingIdx = i;
-            else if (wasFalling && !isFalling && sum < threshold)
-                return null; // overlap: hit adjacent peak before reaching threshold
+            sum += current;
+            if (sum >= threshold)
+                return i;
 
-            wasFalling = isFalling;
-
-            if (sum >= threshold && (isFalling || lastFallingIdx.HasValue))
-                return lastFallingIdx ?? i;
-
+            previous = current;
             i += direction;
         }
 

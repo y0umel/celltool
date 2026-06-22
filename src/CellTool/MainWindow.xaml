@@ -1,38 +1,69 @@
-<ui:UiWindow x:Class="CellTool.MainWindow"
+<Window x:Class="CellTool.MainWindow"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-             xmlns:views="clr-namespace:CellTool.Views"
              mc:Ignorable="d"
              Title="CellTool — NAND Vt Analyzer"
              Height="900" Width="1400"
              MinHeight="600" MinWidth="1000"
-             ExtendsContentIntoTitleBar="True"
-             WindowCornerPreference="Round"
              WindowStartupLocation="CenterScreen">
 
+    <Window.Resources>
+        <Style x:Key="NavButtonStyle" TargetType="{x:Type Button}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Margin" Value="8,2" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource CellTool.TextPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+    </Window.Resources>
+
     <Grid>
-        <ui:NavigationView x:Name="RootNavigation"
-                           IsBackEnabled="False"
-                           IsPaneToggleVisible="False"
-                           PaneDisplayMode="Left">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-            <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Home" Icon="{ui:SymbolIcon Home24}" Tag="Home" />
-                <ui:NavigationViewItem Content="Data Config" Icon="{ui:SymbolIcon DataUsage24}" Tag="DataConfig" />
-                <ui:NavigationViewItem Content="Chart Config" Icon="{ui:SymbolIcon Chart24}" Tag="ChartConfig" />
-                <ui:NavigationViewItem Content="Automation" Icon="{ui:SymbolIcon Cloud24}" Tag="Automation" />
-            </ui:NavigationView.MenuItems>
+        <Border Grid.Column="0"
+                Background="{DynamicResource CellTool.BackgroundBrush}"
+                BorderBrush="{DynamicResource CellTool.BorderBrush}"
+                BorderThickness="0,0,1,0">
+            <DockPanel Margin="0,12">
+                <StackPanel DockPanel.Dock="Bottom">
+                    <Button Content="设置"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="SettingsNav_Click" />
+                </StackPanel>
 
-            <ui:NavigationView.FooterMenuItems>
-                <ui:NavigationViewItem Content="Settings" Icon="{ui:SymbolIcon Settings24}" Tag="Settings" />
-            </ui:NavigationView.FooterMenuItems>
+                <StackPanel>
+                    <TextBlock Text="CellTool"
+                               Margin="20,0,20,16"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource CellTool.TextPrimaryBrush}" />
+                    <Button Content="首页"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="HomeNav_Click" />
+                    <Button Content="数据配置"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="DataConfigNav_Click" />
+                    <Button Content="图表配置"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="ChartConfigNav_Click" />
+                    <Button Content="自动化"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="AutomationNav_Click" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
 
-            <Frame x:Name="ContentFrame" NavigationUIVisibility="Hidden" />
-
-        </ui:NavigationView>
+        <Frame x:Name="ContentFrame"
+               Grid.Column="1"
+               NavigationUIVisibility="Hidden" />
     </Grid>
 
-</ui:UiWindow>
+</Window>

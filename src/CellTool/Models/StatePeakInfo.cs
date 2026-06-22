@@ -3,14 +3,20 @@ namespace CellTool.Models;
 public class StatePeakInfo
 {
     public int StateIndex { get; init; }
-    public double PeakVoltageMv { get; init; }
-    public double? LeftBoundaryMv { get; init; }
-    public double? RightBoundaryMv { get; init; }
+    public int TransitionIndex => StateIndex;
+    public string Label { get; init; } = string.Empty;
+    public double PeakCode { get; init; }
+    public double PeakVoltageMv => PeakCode;
+    public double? LeftBoundaryCode { get; init; }
+    public double? LeftBoundaryMv => LeftBoundaryCode;
+    public double? RightBoundaryCode { get; init; }
+    public double? RightBoundaryMv => RightBoundaryCode;
     public int TotalCellCount { get; init; }
     public double PeakIncrementValue { get; init; }
 
-    public double? WindowWidthMv =>
-        LeftBoundaryMv.HasValue && RightBoundaryMv.HasValue
-            ? RightBoundaryMv.Value - LeftBoundaryMv.Value
+    public double? WindowWidthCode =>
+        LeftBoundaryCode.HasValue && RightBoundaryCode.HasValue
+            ? RightBoundaryCode.Value - LeftBoundaryCode.Value
             : null;
+    public double? WindowWidthMv => WindowWidthCode;
 }

@@ -8,6 +8,6 @@ public partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
-        DataContext = new SettingsViewModel();
+        DataContext = new SettingsViewModel(AppServices.State, AppServices.Dialogs);
     }
 }

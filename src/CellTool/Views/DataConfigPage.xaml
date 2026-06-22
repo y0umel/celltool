@@ -8,7 +8,7 @@
       xmlns:models="clr-namespace:CellTool.Models"
       mc:Ignorable="d"
       d:DataContext="{d:DesignInstance vm:DataConfigViewModel}"
-      Title="Data Config">
+      Title="数据配置">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -19,7 +19,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="0" Header="Chip Database (Excel)" Margin="0,0,0,12">
+        <GroupBox Grid.Row="0" Header="厂家信息表" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />
@@ -29,24 +29,30 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Excel File:" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="表文件:" VerticalAlignment="Center" />
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ExcelFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                 <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Width="80"
                         Command="{Binding LoadExcelCommand}" />
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Chip Model:" VerticalAlignment="Center" Margin="0,4,0,0" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="厂家:" VerticalAlignment="Center" Margin="0,4,0,0" />
                 <ComboBox Grid.Row="1" Grid.Column="1" Margin="4,4,4,0"
+                          ItemsSource="{Binding AvailableManufacturers}"
+                          SelectedItem="{Binding SelectedManufacturer}" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="芯片型号:" VerticalAlignment="Center" Margin="0,4,0,0" />
+                <ComboBox Grid.Row="2" Grid.Column="1" Margin="4,4,4,0"
                           ItemsSource="{Binding AvailableChips}"
                           SelectedItem="{Binding SelectedChip}"
                           DisplayMemberPath="DieName" />
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding ChipStatus}" Margin="4,4,0,0"
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding ChipStatus}" Margin="4,4,0,0"
                            VerticalAlignment="Center" TextWrapping="Wrap" FontSize="11" />
             </Grid>
         </GroupBox>
 
-        <GroupBox Grid.Row="1" Header="GroupModel" Margin="0,0,0,12">
+        <GroupBox Grid.Row="1" Header="组模型" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />
@@ -58,7 +64,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Model File:" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="模型文件:" VerticalAlignment="Center" />
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding GroupModelFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                 <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Width="80"
                         Command="{Binding LoadGroupModelCommand}" />
@@ -67,41 +73,44 @@
             </Grid>
         </GroupBox>
 
-        <GroupBox Grid.Row="2" Header="Gray Code Configuration" Margin="0,0,0,12">
+        <GroupBox Grid.Row="2" Header="格雷码配置" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="120" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="120" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <TextBlock Grid.Column="0" Text="MSB:" VerticalAlignment="Center" />
-                <ComboBox Grid.Column="1" Margin="4,0"
-                          SelectedItem="{Binding GrayCodeMsb}">
-                    <ComboBoxItem Content="U - Upper Page" />
-                    <ComboBoxItem Content="M - Middle Page" />
-                    <ComboBoxItem Content="L - Lower Page" />
-                </ComboBox>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="页顺序:" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="0" Grid.Column="1" Margin="4,0,12,4"
+                          ItemsSource="{Binding GrayCodeOrders}"
+                          SelectedItem="{Binding GrayCodeOrder}" />
 
-                <TextBlock Grid.Column="2" Text="LSB:" VerticalAlignment="Center" Margin="16,0,4,0" />
-                <ComboBox Grid.Column="3" Margin="4,0"
-                          SelectedItem="{Binding GrayCodeLsb}">
-                    <ComboBoxItem Content="U - Upper Page" />
-                    <ComboBoxItem Content="M - Middle Page" />
-                    <ComboBoxItem Content="L - Lower Page" />
-                </ComboBox>
-
-                <TextBlock Grid.Column="4" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <Run Text="Codeword Size:" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,0,4" VerticalAlignment="Center">
+                    <Run Text="码字大小: " />
                     <Run Text="{Binding CodewordBytes}" FontWeight="Bold" />
-                    <Run Text=" bytes" />
+                    <Run Text=" 字节" />
                 </TextBlock>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="SLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,2" />
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="MLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding MlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,2" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="TLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,0" />
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="QLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding QlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,0" />
             </Grid>
         </GroupBox>
 
-        <GroupBox Grid.Row="3" Header="Reference File (for Codeword Comparison)" Margin="0,0,0,12">
+        <GroupBox Grid.Row="3" Header="参考文件 (码字对比)" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />
@@ -109,7 +118,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Reference File:" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Text="参考文件:" VerticalAlignment="Center" />
                 <TextBox Grid.Column="1" Text="{Binding ReferenceFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
                 <Button Grid.Column="2" Content="Browse..." Width="80"
                         Command="{Binding BrowseReferenceCommand}" />

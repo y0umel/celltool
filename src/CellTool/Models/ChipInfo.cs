@@ -10,6 +10,9 @@ public enum XlcType
 
 public class ChipInfo
 {
+    public const string UnknownManufacturer = "未指定厂家";
+
+    public string Manufacturer { get; init; } = UnknownManufacturer;
     public string DieName { get; init; } = string.Empty;
     public XlcType Type { get; init; }
     public int PageDataBytes { get; init; }
@@ -24,5 +27,5 @@ public class ChipInfo
     public int StateCount => 1 << (int)Type;
     public int BitsPerCell => (int)Type;
 
-    public override string ToString() => $"{DieName} ({Type}, {StateCount} states)";
+    public override string ToString() => $"{Manufacturer} {DieName} ({Type}, {StateCount} states)";
 }

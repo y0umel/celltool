@@ -29,6 +29,10 @@ src/CellTool/
 └── MainWindow.xaml(.cs)  # NavigationView shell
 ```
 
+## 执行计划 (ExecPlans)
+
+io规范、各种功能落地参考 ExecPlan（详见 celltool/PLANS.md）
+
 ## Architecture Rules
 
 1. ViewModels must not reference UI controls. Use data-binding only.
@@ -43,9 +47,10 @@ src/CellTool/
 - **bin file layout**: per WL, Upper page bytes → Middle page bytes → Lower page bytes, contiguous. No distinction between data and redundancy regions during analysis.
 - **Gray code assembly**: default `U-M-L` (MSB=U, LSB=L). Byte-level endianness does not matter (all pages use the same bit order).
 - **Majority-vote ground truth**: ties resolved to the numerically higher state. Cells that never flip are considered 100% stable.
-- **Incremental distribution**: count cells that change state between consecutive voltages, grouped by the destination state.
-- **0.1% boundary**: integrate outward from peak until `(totalCells/8) × 0.001`. If adjacent-state rising edge is hit before reaching threshold, mark boundary as `err`. Apply low-pass (moving-average, window=3) before boundary search.
-- **Optimal read voltage**: per adjacent state pair (TLC → 7 values), search only on scanned voltage grid points (no interpolation), pick the valley with minimum misclassification.
+- **Voltage scan units**: voltage-scan file names are integer voltage codes. One code corresponds to 10mV, but UI ranges, CSV peak/read outputs, and analysis grid points use code units, not mV.
+- **Incremental distribution**: draw one total raw Gray change curve only. For each voltage-code file, compare every cell's raw Gray code with the previous file; the first file is compared against an all-`0xFF` blank page decoded to raw Gray code. Count any raw Gray code difference as one changed cell.
+- **WL mode selection**: each GroupModel row can have 1-4 valid page indices. The valid page count selects SLC/MLC/TLC/QLC mode and the matching manually editable WL encoding.
+- **0.1% boundary / optimal read voltage**: deferred for the single-curve implementation. Do not emit reliable best-read codes until multi-peak detection is reintroduced.
 - **Codeword analysis**: source-vs-reference comparison mode. Codewords are sliced within each page independently. Output two error rates: at best read voltage and at zero offset.
 - **GroupModel**: user-selected CSV/TXT, one WL per line, comma-separated page indices. `-1` is an optional placeholder. Row count must equal `WL/Block`.
 - **HTTP API / file monitor / CLI**: all deferred — stub interfaces only, throw `NotImplementedException`.

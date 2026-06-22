@@ -8,6 +8,6 @@ public partial class HomePage : Page
     public HomePage()
     {
         InitializeComponent();
-        DataContext = new HomeViewModel();
+        DataContext = new HomeViewModel(AppServices.State, AppServices.Dialogs);
     }
 }

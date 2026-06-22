@@ -7,6 +7,9 @@ public class AnalysisResult
     public CodewordErrorStat? BestVoltageErrors { get; init; }
     public CodewordErrorStat? ZeroOffsetErrors { get; init; }
     public double[][] IncrementCurves { get; init; } = Array.Empty<double[]>();
+    public double[] VoltageCodes { get; init; } = Array.Empty<double>();
+    public double[] VoltagesMv => VoltageCodes;
+    public string[] TransitionLabels { get; init; } = Array.Empty<string>();
     public int[] GroundTruth { get; init; } = Array.Empty<int>();
     public int TotalCells { get; init; }
     public int VoltageCount { get; init; }

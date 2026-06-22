@@ -4,6 +4,8 @@ public class CodewordErrorStat
 {
     public int MaxBitErrors { get; init; }
     public double AvgBitErrors { get; init; }
+    public int TotalBitErrors { get; init; }
+    public double ErrorRate { get; init; }
     public int TotalCodewords { get; init; }
     public int[] ErrorCounts { get; init; } = Array.Empty<int>();
 }

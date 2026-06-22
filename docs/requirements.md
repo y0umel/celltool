@@ -19,7 +19,7 @@ WPF (.NET 8) desktop application for NAND Flash threshold voltage analysis. Read
 ## Input Data
 
 ### Voltage Scan Binary Files
-- Naming: `{offset/10}.bin` (e.g. `250.bin` = +2.5V offset)
+- Naming: `{offset/10}` with optional `.bin` suffix (e.g. `250` or `250.bin` = +2.5V offset, `-127` = -1.27V offset)
 - Layout: Per WL, Upper page bytes -> Middle page bytes -> Lower page bytes, contiguous
 - No distinction between data and redundancy regions during analysis
 - Byte-level endianness does not matter (all pages use same bit order)
@@ -29,6 +29,7 @@ Core columns (selected die auto-fills from these):
 
 | Column | Example (G8T22) | Purpose |
 |---|---|---|
+| `厂家` / `厂商` / `Factory` / `Manufacturer` / `Vendor` | YMTC | UI first-level dropdown; optional, defaults to `未指定厂家` |
 | `die简称` | G8T22 | UI dropdown identifier |
 | `xLC` | TLC | Infer state count, valid page count per WL |
 | `页 数据 Byte` | 16384 | Compute page_total_bytes |
@@ -46,13 +47,13 @@ Core columns (selected die auto-fills from these):
 
 ## Core Analysis Pipeline
 
-1. **File scan**: Parse filenames, sort by voltage offset
+1. **File scan**: Parse filename voltage codes, sort by code
 2. **Page extraction**: MemoryMappedFile reads target WL/page bytes
-3. **Gray code decode**: Assemble U/M/L bits -> gray code -> physical state per cell
+3. **Gray code decode**: Assemble target page bits -> raw Gray code; GroupModel row page count selects SLC/MLC/TLC/QLC encoding
 4. **Majority vote**: Ground truth per cell across all voltages. Ties -> higher state
-5. **Increment curves**: Cells changing state between consecutive voltages, grouped by destination state
+5. **Increment curve**: One total curve; each point is the number of cells whose raw Gray code changed from the previous voltage-code file
 6. **0.1% boundaries**: Integrate outward from peak until `(totalCells/8) * 0.1%`. Overlap -> err
-7. **Best read voltages**: Per adjacent state pair, valley on scanned grid points, no interpolation
+7. **Best read codes**: Deferred while the single total-change curve is used
 8. **Codeword errors**: Source-vs-reference comparison, page-internal codeword slicing
 
 ## Key Design Decisions (from requirements review)
@@ -67,8 +68,8 @@ Core columns (selected die auto-fills from these):
 
 ## Output Products
 
-- **PNG**: Vt increment distribution chart with state curves, 0.1% boundaries, best read voltage markers
-- **CSV reports**: Peak parameters, best voltages per WL, codeword error statistics
+- **PNG**: Vt increment distribution chart with one total raw Gray change curve
+- **CSV reports**: Total change curve metadata and codeword error statistics; peak and best-read fields are marked not calculated until multi-peak detection returns
 - **JSON config**: All UI parameters for save/restore
 
 ## Development Stages

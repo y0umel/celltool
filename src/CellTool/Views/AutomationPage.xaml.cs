@@ -8,6 +8,6 @@ public partial class AutomationPage : Page
     public AutomationPage()
     {
         InitializeComponent();
-        DataContext = new AutomationViewModel();
+        DataContext = new AutomationViewModel(AppServices.State);
     }
 }

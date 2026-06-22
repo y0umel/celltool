@@ -10,8 +10,13 @@ public partial class ChartConfigPage : Page
     public ChartConfigPage()
     {
         InitializeComponent();
-        _vm = new ChartConfigViewModel();
+        _vm = new ChartConfigViewModel(AppServices.State, AppServices.Dialogs);
         DataContext = _vm;
-        _vm.ChartUpdated += plot => ChartPlot.Plot = plot;
+        _vm.ChartUpdated += plot =>
+        {
+            ChartPlot.Reset(plot);
+            ChartPlot.Refresh();
+        };
+        Loaded += (_, _) => _vm.RefreshPreview();
     }
 }

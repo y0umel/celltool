@@ -7,7 +7,7 @@
       xmlns:vm="clr-namespace:CellTool.ViewModels"
       mc:Ignorable="d"
       d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
-      Title="Settings">
+      Title="设置">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -17,28 +17,28 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="0" Header="Appearance" Margin="0,0,0,12">
+        <GroupBox Grid.Row="0" Header="外观" Margin="0,0,0,12">
             <StackPanel Margin="8">
-                <ui:ToggleSwitch Content="Dark Theme"
+                <ui:ToggleSwitch Content="深色主题"
                                  IsChecked="{Binding IsDarkTheme}"
                                  Margin="0,4" />
             </StackPanel>
         </GroupBox>
 
-        <GroupBox Grid.Row="1" Header="Configuration" Margin="0,0,0,12">
+        <GroupBox Grid.Row="1" Header="配置" Margin="0,0,0,12">
             <StackPanel Margin="8" Orientation="Horizontal">
-                <Button Content="Export Config" Width="120" Margin="0,0,8,0"
+                <Button Content="导出配置" Width="120" Margin="0,0,8,0"
                         Command="{Binding ExportConfigCommand}" />
-                <Button Content="Import Config" Width="120"
+                <Button Content="导入配置" Width="120"
                         Command="{Binding ImportConfigCommand}" />
             </StackPanel>
         </GroupBox>
 
-        <GroupBox Grid.Row="2" Header="About" Margin="0,0,0,12">
+        <GroupBox Grid.Row="2" Header="关于" Margin="0,0,0,12">
             <StackPanel Margin="8">
                 <TextBlock Text="{Binding AboutText}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
                 <TextBlock Text="Built with WPF (.NET 8), WPF-UI, ScottPlot, CommunityToolkit.Mvvm"
-                           FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                           FontSize="12" Foreground="{DynamicResource CellTool.TextSecondaryBrush}" />
             </StackPanel>
         </GroupBox>
     </Grid>

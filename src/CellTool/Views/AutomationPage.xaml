@@ -7,7 +7,7 @@
       xmlns:vm="clr-namespace:CellTool.ViewModels"
       mc:Ignorable="d"
       d:DataContext="{d:DesignInstance vm:AutomationViewModel}"
-      Title="Automation">
+      Title="自动化">
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -16,9 +16,9 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="0" Header="Automation Modes" Margin="0,0,0,12">
+        <GroupBox Grid.Row="0" Header="自动化模式" Margin="0,0,0,12">
             <StackPanel Margin="8">
-                <ui:ToggleSwitch Content="File Monitor"
+                <ui:ToggleSwitch Content="文件监视"
                                  IsChecked="{Binding FileMonitorEnabled}"
                                  Margin="0,4" />
                 <ui:ToggleSwitch Content="HTTP API"
@@ -27,7 +27,7 @@
             </StackPanel>
         </GroupBox>
 
-        <GroupBox Grid.Row="1" Header="HTTP API Configuration" Margin="0,0,0,12">
+        <GroupBox Grid.Row="1" Header="HTTP API 配置" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -35,10 +35,10 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Port:" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="0" Text="端口:" VerticalAlignment="Center" />
                 <TextBox Grid.Column="1" Text="{Binding ApiPort}" Margin="8,0" />
                 <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="11">
-                    <Run Text="Endpoint: http://localhost:" />
+                    <Run Text="端点: http://localhost:" />
                     <Run Text="{Binding ApiPort}" />
                     <Run Text="/analyze" />
                 </TextBlock>
@@ -46,7 +46,7 @@
         </GroupBox>
 
         <Border Grid.Row="2" Padding="16" CornerRadius="6"
-                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                Background="{DynamicResource CellTool.SurfaceBrush}">
             <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="13" />
         </Border>
     </Grid>

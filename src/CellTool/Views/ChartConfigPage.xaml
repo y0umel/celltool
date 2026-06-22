@@ -8,7 +8,7 @@
       xmlns:sp="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
       mc:Ignorable="d"
       d:DataContext="{d:DesignInstance vm:ChartConfigViewModel}"
-      Title="Chart Config">
+      Title="图表配置">
 
     <Grid Margin="24">
         <Grid.ColumnDefinitions>
@@ -18,18 +18,18 @@
 
         <ScrollViewer Grid.Column="0">
             <StackPanel>
-                <GroupBox Header="Labels" Margin="0,0,0,8">
+                <GroupBox Header="标签" Margin="0,0,0,8">
                     <StackPanel Margin="8">
-                        <TextBlock Text="Title" Margin="0,0,0,2" />
+                        <TextBlock Text="标题" Margin="0,0,0,2" />
                         <TextBox Text="{Binding ChartTitle, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
-                        <TextBlock Text="X Axis" Margin="0,0,0,2" />
+                        <TextBlock Text="X 轴" Margin="0,0,0,2" />
                         <TextBox Text="{Binding XAxisLabel, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8" />
-                        <TextBlock Text="Y Axis" Margin="0,0,0,2" />
+                        <TextBlock Text="Y 轴" Margin="0,0,0,2" />
                         <TextBox Text="{Binding YAxisLabel, UpdateSourceTrigger=PropertyChanged}" />
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="Axis Range" Margin="0,0,0,8">
+                <GroupBox Header="坐标轴范围" Margin="0,0,0,8">
                     <Grid Margin="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -41,47 +41,44 @@
                             <RowDefinition />
                             <RowDefinition />
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="X Min" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="X 最小" VerticalAlignment="Center" />
                         <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding XMin}" Margin="8,2,0,4" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="X Max" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="X 最大" VerticalAlignment="Center" />
                         <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding XMax}" Margin="8,2,0,4" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Y Min" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Y 最小" VerticalAlignment="Center" />
                         <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding YMin}" Margin="8,2,0,4" />
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Y Max" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Y 最大" VerticalAlignment="Center" />
                         <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding YMax}" Margin="8,2,0,4" />
                     </Grid>
                 </GroupBox>
 
-                <GroupBox Header="Annotations" Margin="0,0,0,8">
+                <GroupBox Header="标注" Margin="0,0,0,8">
                     <StackPanel Margin="8">
-                        <CheckBox Content="Show 0.1% Boundary Lines"
+                        <CheckBox Content="显示 0.1% 边界线"
                                   IsChecked="{Binding ShowBoundaryLines}" Margin="0,2" />
-                        <CheckBox Content="Show Best Read Voltages"
+                        <CheckBox Content="显示最佳读取 code"
                                   IsChecked="{Binding ShowReadVoltage}" Margin="0,2" />
-                        <CheckBox Content="Show Legend"
+                        <CheckBox Content="显示图例"
                                   IsChecked="{Binding ShowLegend}" Margin="0,2" />
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Header="Template" Margin="0,0,0,8">
+                <GroupBox Header="模板" Margin="0,0,0,8">
                     <StackPanel Margin="8" Orientation="Horizontal">
-                        <Button Content="Save" Width="70" Margin="0,0,4,0"
+                        <Button Content="保存" Width="70" Margin="0,0,4,0"
                                 Command="{Binding SaveChartTemplateCommand}" />
-                        <Button Content="Load" Width="70"
+                        <Button Content="加载" Width="70"
                                 Command="{Binding LoadChartTemplateCommand}" />
                     </StackPanel>
                 </GroupBox>
             </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Column="1" Margin="12,0,0,0"
-                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1" CornerRadius="6">
-            <Grid Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                <sp:WpfPlot x:Name="ChartPlot"
-                            HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
-            </Grid>
-        </Border>
+        <Grid Grid.Column="1" Margin="12,0,0,0"
+              Background="{DynamicResource CellTool.SurfaceBrush}">
+            <sp:WpfPlot x:Name="ChartPlot"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+        </Grid>
     </Grid>
 
 </Page>
