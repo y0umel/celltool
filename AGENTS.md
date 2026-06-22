@@ -48,7 +48,7 @@ io规范、各种功能落地参考 ExecPlan（详见 celltool/PLANS.md）
 - **Gray code assembly**: default `U-M-L` (MSB=U, LSB=L). Byte-level endianness does not matter (all pages use the same bit order).
 - **Majority-vote ground truth**: ties resolved to the numerically higher state. Cells that never flip are considered 100% stable.
 - **Voltage scan units**: voltage-scan file names are integer voltage codes. One code corresponds to 10mV, but UI ranges, CSV peak/read outputs, and analysis grid points use code units, not mV.
-- **Incremental distribution**: draw one total raw Gray change curve only. For each voltage-code file, compare every cell's raw Gray code with the previous file; the first file is compared against an all-`0xFF` blank page decoded to raw Gray code. Count any raw Gray code difference as one changed cell.
+- **Incremental distribution**: draw one total raw Gray change curve only. For each cell, find the first voltage-code point where it stably enters a raw Gray code different from the all-`0xFF` blank baseline; count each cell at most once. Use a small stable window to suppress one-point bounce.
 - **WL mode selection**: each GroupModel row can have 1-4 valid page indices. The valid page count selects SLC/MLC/TLC/QLC mode and the matching manually editable WL encoding.
 - **0.1% boundary / optimal read voltage**: deferred for the single-curve implementation. Do not emit reliable best-read codes until multi-peak detection is reintroduced.
 - **Codeword analysis**: source-vs-reference comparison mode. Codewords are sliced within each page independently. Output two error rates: at best read voltage and at zero offset.

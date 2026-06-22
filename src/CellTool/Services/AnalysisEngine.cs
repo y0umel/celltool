@@ -99,11 +99,12 @@ public class AnalysisEngine
 
         progress?.Report((0.72, "Computing total raw Gray change distribution..."));
         var voltageCodes = files.Select(f => (double)f.Code).ToArray();
-        var totalIncrements = ComputeRawGrayChangeIncrements(
+        var totalIncrements = ComputeFirstStableRawGrayFlipIncrements(
             rawGrayPerVoltage,
             blankRawGray,
             totalCells,
-            voltageCount);
+            voltageCount,
+            stableWindow: 2);
         var increments = new[] { totalIncrements };
         var transitionLabels = new[] { "Total Gray changes" };
         var statePeaks = Array.Empty<StatePeakInfo>();
@@ -293,6 +294,54 @@ public class AnalysisEngine
         }
 
         return increments;
+    }
+
+    public static double[] ComputeFirstStableRawGrayFlipIncrements(
+        int[][] rawGrayPerVoltage,
+        int[] blankRawGrayStates,
+        int totalCells,
+        int voltageCount,
+        int stableWindow = 2)
+    {
+        var increments = new double[voltageCount];
+        int requiredStableWindow = Math.Max(1, stableWindow);
+
+        for (int c = 0; c < totalCells; c++)
+        {
+            int baseline = blankRawGrayStates[c];
+
+            for (int v = 0; v < voltageCount; v++)
+            {
+                int current = rawGrayPerVoltage[v][c];
+                if (current == baseline)
+                    continue;
+
+                if (IsStableFrom(rawGrayPerVoltage, c, v, current, requiredStableWindow))
+                {
+                    increments[v]++;
+                    break;
+                }
+            }
+        }
+
+        return increments;
+    }
+
+    private static bool IsStableFrom(
+        int[][] rawGrayPerVoltage,
+        int cell,
+        int startVoltage,
+        int rawGray,
+        int stableWindow)
+    {
+        int endVoltage = Math.Min(rawGrayPerVoltage.Length, startVoltage + stableWindow);
+        for (int v = startVoltage; v < endVoltage; v++)
+        {
+            if (rawGrayPerVoltage[v][cell] != rawGray)
+                return false;
+        }
+
+        return true;
     }
 
     public static string[] BuildTransitionLabels(int[] wlEncoding)

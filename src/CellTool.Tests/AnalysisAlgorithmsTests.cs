@@ -42,6 +42,28 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void ComputeFirstStableRawGrayFlipIncrements_CountsEachCellOnceAfterStableChange()
+    {
+        int[][] rawGrayStates =
+        [
+            [7, 7, 6, 7, 7],
+            [6, 7, 7, 6, 7],
+            [6, 4, 6, 6, 4],
+            [6, 4, 6, 0, 4]
+        ];
+        int[] blank = [7, 7, 7, 7, 7];
+
+        var increments = AnalysisEngine.ComputeFirstStableRawGrayFlipIncrements(
+            rawGrayStates,
+            blank,
+            totalCells: 5,
+            voltageCount: 4,
+            stableWindow: 2);
+
+        Assert.Equal([0, 2, 3, 0], increments);
+    }
+
+    [Fact]
     public void FindBestReadVoltages_SearchesBetweenAdjacentPeaks()
     {
         int[][] states =
