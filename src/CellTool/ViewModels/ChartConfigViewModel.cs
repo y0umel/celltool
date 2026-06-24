@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ScottPlot;
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 
 namespace CellTool.ViewModels;
 
@@ -32,7 +33,7 @@ public partial class ChartConfigViewModel : ObservableObject
     private string _chartTitle = "Vt Incremental Distribution";
 
     [ObservableProperty]
-    private string _xAxisLabel = "Voltage Code from Lower Bound (1 code = 10mV)";
+    private string _xAxisLabel = "Read Offset Code (10mV/code)";
 
     [ObservableProperty]
     private string _yAxisLabel = "Cell Count";
@@ -58,7 +59,9 @@ public partial class ChartConfigViewModel : ObservableObject
     [ObservableProperty]
     private bool _showLegend = true;
 
-    public event Action<Plot>? ChartUpdated;
+    public ObservableCollection<LimitMissStat> LimitMissStats { get; } = new();
+
+    public event Action<Plot, Plot>? ChartUpdated;
 
     public void SetData(AnalysisResult result, double[] voltagesMv)
     {
@@ -134,8 +137,14 @@ public partial class ChartConfigViewModel : ObservableObject
     {
         if (state.LastResult is null) return;
 
-        var plot = renderer.Render(state.LastResult, state.LastVoltages, BuildConfig());
-        ChartUpdated?.Invoke(plot);
+        var config = BuildConfig();
+        var linear = renderer.RenderLinear(state.LastResult, config);
+        var log = renderer.RenderLog(state.LastResult, config);
+        LimitMissStats.Clear();
+        foreach (var stat in renderer.BuildLimitMissStats(state.LastResult))
+            LimitMissStats.Add(stat);
+
+        ChartUpdated?.Invoke(linear, log);
     }
 
     public void RefreshPreview() => RefreshChart();

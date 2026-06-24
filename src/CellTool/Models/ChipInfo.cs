@@ -15,15 +15,23 @@ public class ChipInfo
     public string Manufacturer { get; init; } = UnknownManufacturer;
     public string DieName { get; init; } = string.Empty;
     public XlcType Type { get; init; }
-    public int PageDataBytes { get; init; }
-    public int PageRedundantBytes { get; init; }
-    public int FrameCount { get; init; }
-    public int BlockSizePages { get; init; }
-    public int WlPerBlock { get; init; }
+    public int? PageDataBytes { get; init; }
+    public int? PageRedundantBytes { get; init; }
+    public int? FrameCount { get; init; }
+    public int? BlockSizePages { get; init; }
+    public int? WlPerBlock { get; init; }
     public int[] WlEncoding { get; init; } = Array.Empty<int>();
 
-    public int PageTotalBytes => PageDataBytes + PageRedundantBytes;
-    public int CodewordBytes => PageTotalBytes / FrameCount;
+    public int? PageTotalBytes =>
+        PageDataBytes.HasValue && PageRedundantBytes.HasValue
+            ? PageDataBytes.Value + PageRedundantBytes.Value
+            : null;
+
+    public int? CodewordBytes =>
+        PageTotalBytes.HasValue && FrameCount is > 0
+            ? PageTotalBytes.Value / FrameCount.Value
+            : null;
+
     public int StateCount => 1 << (int)Type;
     public int BitsPerCell => (int)Type;
 

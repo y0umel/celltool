@@ -10,12 +10,12 @@
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
             <converters:BooleanInvertConverter x:Key="BooleanInvertConverter" />
-            <SolidColorBrush x:Key="CellTool.BackgroundBrush" Color="#202020" />
-            <SolidColorBrush x:Key="CellTool.SurfaceBrush" Color="#2B2B2B" />
-            <SolidColorBrush x:Key="CellTool.BorderBrush" Color="#4A4A4A" />
-            <SolidColorBrush x:Key="CellTool.TextPrimaryBrush" Color="#F3F3F3" />
-            <SolidColorBrush x:Key="CellTool.TextSecondaryBrush" Color="#C7C7C7" />
-            <SolidColorBrush x:Key="CellTool.AccentBrush" Color="#2FBFA3" />
+            <SolidColorBrush x:Key="CellTool.BackgroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CellTool.SurfaceBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="CellTool.BorderBrush" Color="#DADADA" />
+            <SolidColorBrush x:Key="CellTool.TextPrimaryBrush" Color="#1A1A1A" />
+            <SolidColorBrush x:Key="CellTool.TextSecondaryBrush" Color="#5A5A5A" />
+            <SolidColorBrush x:Key="CellTool.AccentBrush" Color="#138A74" />
 
             <Style TargetType="{x:Type TextBlock}">
                 <Setter Property="Foreground" Value="{DynamicResource CellTool.TextPrimaryBrush}" />

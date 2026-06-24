@@ -10,6 +10,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        AppServices.State.SetChipDatabase(new ChipDatabaseService().Load());
         var window = new MainWindow();
         MainWindow = window;
         SystemThemeWatcher.Watch(window);

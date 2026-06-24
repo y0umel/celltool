@@ -108,6 +108,43 @@ public partial class HomeViewModel : ObservableObject
         }
     }
 
+    public string SelectedManufacturer
+    {
+        get => state.SelectedManufacturer;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            if (state.SelectedManufacturer == value) return;
+            state.SelectManufacturer(value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(AvailableChips));
+            OnPropertyChanged(nameof(SelectedChip));
+            OnPropertyChanged(nameof(WlCount));
+            OnPropertyChanged(nameof(ChipStatus));
+        }
+    }
+
+    public ChipInfo? SelectedChip
+    {
+        get => state.SelectedChip;
+        set
+        {
+            if (state.SelectedChip == value) return;
+            state.SelectChip(value);
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedManufacturer));
+            OnPropertyChanged(nameof(WlCount));
+            OnPropertyChanged(nameof(ChipStatus));
+        }
+    }
+
+    public ObservableCollection<string> AvailableManufacturers => state.AvailableManufacturers;
+    public ObservableCollection<ChipInfo> AvailableChips => state.AvailableChips;
+
+    public string ChipStatus => state.SelectedChip is null
+        ? "未选择芯片"
+        : $"{state.SelectedChip.Manufacturer} / {state.SelectedChip.DieName} - {state.SelectedChip.Type}, {FormatOptional(state.SelectedChip.PageTotalBytes)} B/page, {FormatOptional(state.SelectedChip.CodewordBytes)} B/CW, WL/Block {FormatOptional(state.SelectedChip.WlPerBlock)}, WL编码 {FormatEncoding(state.SelectedChip.WlEncoding)}";
+
     [ObservableProperty]
     private bool _isAnalyzing;
 
@@ -144,8 +181,25 @@ public partial class HomeViewModel : ObservableObject
             case nameof(AppState.StartPage):
                 OnPropertyChanged(nameof(StartPage));
                 break;
+            case nameof(AppState.SelectedManufacturer):
+                OnPropertyChanged(nameof(SelectedManufacturer));
+                OnPropertyChanged(nameof(AvailableChips));
+                break;
+            case nameof(AppState.SelectedChip):
+                OnPropertyChanged(nameof(SelectedChip));
+                OnPropertyChanged(nameof(ChipStatus));
+                break;
+            case nameof(AppState.SelectedDieName):
+                OnPropertyChanged(nameof(ChipStatus));
+                break;
         }
     }
+
+    private static string FormatOptional(int? value) =>
+        value.HasValue ? value.Value.ToString() : "未配置";
+
+    private static string FormatEncoding(int[] encoding) =>
+        encoding.Length > 0 ? string.Join(",", encoding) : "未配置";
 
     [RelayCommand]
     private void BrowseInputDirectory()
@@ -174,7 +228,7 @@ public partial class HomeViewModel : ObservableObject
 
         if (state.SelectedChip is null || state.LoadedGroupModel is null)
         {
-            dialogs.ShowWarning("请先在数据配置中加载芯片数据库和组模型。");
+            dialogs.ShowWarning("请先在首页选择芯片，并在数据配置中加载组模型。");
             return;
         }
 

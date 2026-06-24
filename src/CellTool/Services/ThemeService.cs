@@ -30,7 +30,7 @@ public static class ThemeService
         if (Application.Current is null)
             return;
 
-        SetBrush("CellTool.BackgroundBrush", isDarkTheme ? "#202020" : "#FAFAFA");
+        SetBrush("CellTool.BackgroundBrush", isDarkTheme ? "#202020" : "#FFFFFF");
         SetBrush("CellTool.SurfaceBrush", isDarkTheme ? "#2B2B2B" : "#FFFFFF");
         SetBrush("CellTool.BorderBrush", isDarkTheme ? "#4A4A4A" : "#DADADA");
         SetBrush("CellTool.TextPrimaryBrush", isDarkTheme ? "#F3F3F3" : "#1A1A1A");
@@ -54,29 +54,5 @@ public static class ThemeService
     {
         if (Application.Current.TryFindResource("CellTool.BackgroundBrush") is Brush background)
             window.Background = background;
-
-        if (Application.Current.TryFindResource("CellTool.TextPrimaryBrush") is not Brush foreground)
-            return;
-
-        foreach (var control in FindVisualChildren<System.Windows.Controls.Control>(window))
-            control.Foreground = foreground;
-
-        foreach (var textBlock in FindVisualChildren<System.Windows.Controls.TextBlock>(window))
-            textBlock.Foreground = foreground;
-    }
-
-    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        int count = VisualTreeHelper.GetChildrenCount(root);
-        for (int i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is T match)
-                yield return match;
-
-            foreach (var descendant in FindVisualChildren<T>(child))
-                yield return descendant;
-        }
     }
 }

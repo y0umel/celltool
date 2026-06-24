@@ -11,10 +11,9 @@
 
     <Window.Resources>
         <Style x:Key="NavButtonStyle" TargetType="{x:Type Button}">
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Height" Value="40" />
-            <Setter Property="Margin" Value="8,2" />
-            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Padding" Value="14,0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Foreground" Value="{DynamicResource CellTool.TextPrimaryBrush}" />
@@ -23,28 +22,24 @@
     </Window.Resources>
 
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="56" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <Border Grid.Column="0"
+        <Border Grid.Row="0"
                 Background="{DynamicResource CellTool.BackgroundBrush}"
                 BorderBrush="{DynamicResource CellTool.BorderBrush}"
-                BorderThickness="0,0,1,0">
-            <DockPanel Margin="0,12">
-                <StackPanel DockPanel.Dock="Bottom">
-                    <Button Content="设置"
-                            Style="{StaticResource NavButtonStyle}"
-                            Click="SettingsNav_Click" />
-                </StackPanel>
-
-                <StackPanel>
-                    <TextBlock Text="CellTool"
-                               Margin="20,0,20,16"
-                               FontSize="18"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource CellTool.TextPrimaryBrush}" />
+                BorderThickness="0,0,0,1">
+            <DockPanel Margin="16,0">
+                <TextBlock Text="CellTool"
+                           DockPanel.Dock="Left"
+                           VerticalAlignment="Center"
+                           Margin="0,0,20,0"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource CellTool.TextPrimaryBrush}" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Content="首页"
                             Style="{StaticResource NavButtonStyle}"
                             Click="HomeNav_Click" />
@@ -57,12 +52,15 @@
                     <Button Content="自动化"
                             Style="{StaticResource NavButtonStyle}"
                             Click="AutomationNav_Click" />
+                    <Button Content="设置"
+                            Style="{StaticResource NavButtonStyle}"
+                            Click="SettingsNav_Click" />
                 </StackPanel>
             </DockPanel>
         </Border>
 
         <Frame x:Name="ContentFrame"
-               Grid.Column="1"
+               Grid.Row="1"
                NavigationUIVisibility="Hidden" />
     </Grid>
 

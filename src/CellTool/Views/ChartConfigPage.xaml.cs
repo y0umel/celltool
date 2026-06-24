@@ -12,10 +12,12 @@ public partial class ChartConfigPage : Page
         InitializeComponent();
         _vm = new ChartConfigViewModel(AppServices.State, AppServices.Dialogs);
         DataContext = _vm;
-        _vm.ChartUpdated += plot =>
+        _vm.ChartUpdated += (linear, log) =>
         {
-            ChartPlot.Reset(plot);
-            ChartPlot.Refresh();
+            LinearChartPlot.Reset(linear);
+            LinearChartPlot.Refresh();
+            LogChartPlot.Reset(log);
+            LogChartPlot.Refresh();
         };
         Loaded += (_, _) => _vm.RefreshPreview();
     }

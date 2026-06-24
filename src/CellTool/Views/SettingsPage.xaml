@@ -14,6 +14,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -25,7 +26,44 @@
             </StackPanel>
         </GroupBox>
 
-        <GroupBox Grid.Row="1" Header="配置" Margin="0,0,0,12">
+        <GroupBox Grid.Row="1" Header="配置档案" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="当前配置:" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding Profiles}"
+                          SelectedItem="{Binding SelectedProfile}"
+                          DisplayMemberPath="Name"
+                          Margin="4,0,12,0" />
+                <Button Grid.Column="2" Content="新建" Width="72" Margin="0,0,8,0"
+                        Command="{Binding NewProfileCommand}" />
+                <Button Grid.Column="3" Content="重命名" Width="72" Margin="0,0,8,0"
+                        Command="{Binding RenameProfileCommand}" />
+                <Button Grid.Column="4" Content="保存" Width="72"
+                        Command="{Binding SaveProfileCommand}" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Grid.Row="2" Header="厂家数据库" Margin="0,0,0,12">
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding ChipDatabaseStatus}" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="更新厂家表" Width="120"
+                        Command="{Binding UpdateChipDatabaseCommand}" />
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Grid.Row="3" Header="导入/导出" Margin="0,0,0,12">
             <StackPanel Margin="8" Orientation="Horizontal">
                 <Button Content="导出配置" Width="120" Margin="0,0,8,0"
                         Command="{Binding ExportConfigCommand}" />
@@ -34,7 +72,7 @@
             </StackPanel>
         </GroupBox>
 
-        <GroupBox Grid.Row="2" Header="关于" Margin="0,0,0,12">
+        <GroupBox Grid.Row="4" Header="关于" Margin="0,0,0,12">
             <StackPanel Margin="8">
                 <TextBlock Text="{Binding AboutText}" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
                 <TextBlock Text="Built with WPF (.NET 8), WPF-UI, ScottPlot, CommunityToolkit.Mvvm"

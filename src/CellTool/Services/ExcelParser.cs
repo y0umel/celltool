@@ -107,13 +107,7 @@ public class ExcelParser
         }
 
         if (!TryGetCsvString(fields, headers, "xLC", out var xlcStr) ||
-            !TryParseXlcType(xlcStr, out var type) ||
-            !TryGetCsvInt(fields, headers, "页 数据 Byte", out int pageDataBytes) ||
-            !TryGetCsvInt(fields, headers, "页 冗余 Byte", out int pageRedundantBytes) ||
-            !TryGetCsvInt(fields, headers, "1KB Frame 个数 KB", out int frameCount) ||
-            !TryGetCsvInt(fields, headers, "块大小 （页数量）", out int blockSizePages) ||
-            !TryGetCsvInt(fields, headers, "WL/Block", out int wlPerBlock) ||
-            !TryGetCsvIntList(fields, headers, "WL编码", out var wlEncoding))
+            !TryParseXlcType(xlcStr, out var type))
         {
             return false;
         }
@@ -123,12 +117,12 @@ public class ExcelParser
             Manufacturer = ReadCsvManufacturer(fields, headers),
             DieName = dieName.Trim(),
             Type = type,
-            PageDataBytes = pageDataBytes,
-            PageRedundantBytes = pageRedundantBytes,
-            FrameCount = frameCount,
-            BlockSizePages = blockSizePages,
-            WlPerBlock = wlPerBlock,
-            WlEncoding = wlEncoding
+            PageDataBytes = GetOptionalCsvInt(fields, headers, "页 数据 Byte"),
+            PageRedundantBytes = GetOptionalCsvInt(fields, headers, "页 冗余 Byte"),
+            FrameCount = GetOptionalCsvInt(fields, headers, "1KB Frame 个数 KB"),
+            BlockSizePages = GetOptionalCsvInt(fields, headers, "块大小 （页数量）"),
+            WlPerBlock = GetOptionalCsvInt(fields, headers, "WL/Block"),
+            WlEncoding = GetOptionalCsvIntList(fields, headers, "WL编码")
         };
 
         return true;
@@ -144,25 +138,30 @@ public class ExcelParser
         if (!TryParseXlcType(xlcStr, out var type))
             throw new FormatException($"Unknown xLC type: {xlcStr}");
 
-        int pageDataBytes = ParseInt(getString("页 数据 Byte"), "页 数据 Byte");
-        int pageRedundantBytes = ParseInt(getString("页 冗余 Byte"), "页 冗余 Byte");
-        int frameCount = ParseInt(getString("1KB Frame 个数 KB"), "1KB Frame 个数 KB");
-        int blockSizePages = ParseInt(getString("块大小 （页数量）"), "块大小 （页数量）");
-        int wlPerBlock = ParseInt(getString("WL/Block"), "WL/Block");
-        int[] wlEncoding = ParseIntList(getString("WL编码"));
-
         return new ChipInfo
         {
             Manufacturer = ReadManufacturer(getString),
             DieName = dieName.Trim(),
             Type = type,
-            PageDataBytes = pageDataBytes,
-            PageRedundantBytes = pageRedundantBytes,
-            FrameCount = frameCount,
-            BlockSizePages = blockSizePages,
-            WlPerBlock = wlPerBlock,
-            WlEncoding = wlEncoding
+            PageDataBytes = ParseOptionalInt(getOptionalString("页 数据 Byte")),
+            PageRedundantBytes = ParseOptionalInt(getOptionalString("页 冗余 Byte")),
+            FrameCount = ParseOptionalInt(getOptionalString("1KB Frame 个数 KB")),
+            BlockSizePages = ParseOptionalInt(getOptionalString("块大小 （页数量）")),
+            WlPerBlock = ParseOptionalInt(getOptionalString("WL/Block")),
+            WlEncoding = ParseOptionalIntList(getOptionalString("WL编码"))
         };
+
+        string getOptionalString(string columnName)
+        {
+            try
+            {
+                return getString(columnName);
+            }
+            catch (InvalidDataException)
+            {
+                return string.Empty;
+            }
+        }
     }
 
     private static string GetExcelString(
@@ -219,6 +218,16 @@ public class ExcelParser
                TryParseInt(text, out value);
     }
 
+    private static int? GetOptionalCsvInt(
+        IReadOnlyList<string> fields,
+        Dictionary<string, int> headers,
+        string colName)
+    {
+        return TryGetCsvInt(fields, headers, colName, out var value)
+            ? value
+            : null;
+    }
+
     private static bool TryGetCsvIntList(
         IReadOnlyList<string> fields,
         Dictionary<string, int> headers,
@@ -252,6 +261,16 @@ public class ExcelParser
 
         value = parsed.ToArray();
         return value.Length > 0;
+    }
+
+    private static int[] GetOptionalCsvIntList(
+        IReadOnlyList<string> fields,
+        Dictionary<string, int> headers,
+        string colName)
+    {
+        return TryGetCsvIntList(fields, headers, colName, out var value)
+            ? value
+            : Array.Empty<int>();
     }
 
     private static string ReadCsvManufacturer(
@@ -297,6 +316,13 @@ public class ExcelParser
         throw new FormatException($"Column '{colName}': cannot parse '{text}' as int.");
     }
 
+    private static int? ParseOptionalInt(string text)
+    {
+        return TryParseInt(text, out int value)
+            ? value
+            : null;
+    }
+
     private static bool TryParseInt(string text, out int value)
     {
         var normalized = text.Trim().Replace(",", string.Empty, StringComparison.Ordinal);
@@ -338,6 +364,22 @@ public class ExcelParser
         return text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                    .Select(s => int.Parse(s, CultureInfo.InvariantCulture))
                    .ToArray();
+    }
+
+    private static int[] ParseOptionalIntList(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Array.Empty<int>();
+
+        var parsed = new List<int>();
+        foreach (var part in text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+                return parsed.ToArray();
+            parsed.Add(value);
+        }
+
+        return parsed.ToArray();
     }
 
     private static string NormalizeHeader(string text)

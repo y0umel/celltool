@@ -17,9 +17,34 @@ public class AnalysisConfig
     public int VoltageStepMv { get => VoltageStepCode; set => VoltageStepCode = value; }
     public int WlCount { get; set; } = 192;
     public int StartPage { get; set; } = 0;
+    public int? PageDataBytes { get; set; }
+    public int? PageRedundantBytes { get; set; }
+    public int? CodewordsPerPage { get; set; }
+    public double LevelSpacingMv { get; set; }
+    public double MlcLevelSpacingMv { get; set; } = 145;
+    public double TlcLevelSpacingMv { get; set; } = 80;
+    public double QlcLevelSpacingMv { get; set; } = 40;
     public string GrayCodeOrder { get; set; } = "U-M-L";
     public string SlcWlEncoding { get; set; } = string.Empty;
     public string MlcWlEncoding { get; set; } = string.Empty;
     public string TlcWlEncoding { get; set; } = string.Empty;
     public string QlcWlEncoding { get; set; } = string.Empty;
+
+    public int? PageTotalBytes =>
+        PageDataBytes.HasValue && PageRedundantBytes.HasValue
+            ? PageDataBytes.Value + PageRedundantBytes.Value
+            : null;
+
+    public int? CodewordBytes =>
+        PageTotalBytes.HasValue && CodewordsPerPage is > 0
+            ? PageTotalBytes.Value / CodewordsPerPage.Value
+            : null;
+
+    public double GetLevelSpacingMv(XlcType type) => type switch
+    {
+        XlcType.MLC => MlcLevelSpacingMv > 0 ? MlcLevelSpacingMv : LevelSpacingMv,
+        XlcType.TLC => TlcLevelSpacingMv > 0 ? TlcLevelSpacingMv : LevelSpacingMv,
+        XlcType.QLC => QlcLevelSpacingMv > 0 ? QlcLevelSpacingMv : LevelSpacingMv,
+        _ => 0
+    };
 }

@@ -15,44 +15,10 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="0" Header="厂家信息表" Margin="0,0,0,12">
-            <Grid Margin="8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="120" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="表文件:" VerticalAlignment="Center" />
-                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ExcelFilePath, UpdateSourceTrigger=PropertyChanged}" Margin="4" />
-                <Button Grid.Row="0" Grid.Column="2" Content="Browse..." Width="80"
-                        Command="{Binding LoadExcelCommand}" />
-
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="厂家:" VerticalAlignment="Center" Margin="0,4,0,0" />
-                <ComboBox Grid.Row="1" Grid.Column="1" Margin="4,4,4,0"
-                          ItemsSource="{Binding AvailableManufacturers}"
-                          SelectedItem="{Binding SelectedManufacturer}" />
-
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="芯片型号:" VerticalAlignment="Center" Margin="0,4,0,0" />
-                <ComboBox Grid.Row="2" Grid.Column="1" Margin="4,4,4,0"
-                          ItemsSource="{Binding AvailableChips}"
-                          SelectedItem="{Binding SelectedChip}"
-                          DisplayMemberPath="DieName" />
-                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding ChipStatus}" Margin="4,4,0,0"
-                           VerticalAlignment="Center" TextWrapping="Wrap" FontSize="11" />
-            </Grid>
-        </GroupBox>
-
-        <GroupBox Grid.Row="1" Header="组模型" Margin="0,0,0,12">
+        <GroupBox Grid.Row="0" Header="组模型" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />
@@ -73,7 +39,7 @@
             </Grid>
         </GroupBox>
 
-        <GroupBox Grid.Row="2" Header="格雷码配置" Margin="0,0,0,12">
+        <GroupBox Grid.Row="1" Header="格雷码配置" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />
@@ -82,6 +48,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -94,9 +61,26 @@
 
                 <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,0,4" VerticalAlignment="Center">
                     <Run Text="码字大小: " />
-                    <Run Text="{Binding CodewordBytes}" FontWeight="Bold" />
+                    <Run Text="{Binding CodewordBytes, Mode=OneWay, TargetNullValue='未配置'}" FontWeight="Bold" />
                     <Run Text=" 字节" />
                 </TextBlock>
+
+                <Grid Grid.Row="0" Grid.Column="3" Margin="4,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="72" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="72" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="64" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="数据页" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" Text="{Binding PageDataBytes, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" Margin="0,0,10,0" />
+                    <TextBlock Grid.Column="2" Text="冗余页" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="3" Text="{Binding PageRedundantBytes, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" Margin="0,0,10,0" />
+                    <TextBlock Grid.Column="4" Text="CW/Page" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="5" Text="{Binding CodewordsPerPage, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
+                </Grid>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="SLC WL编码:" VerticalAlignment="Center" />
                 <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,2" />
@@ -107,10 +91,28 @@
                 <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,0" />
                 <TextBlock Grid.Row="2" Grid.Column="2" Text="QLC WL编码:" VerticalAlignment="Center" />
                 <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding QlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,0" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="L间距(code):" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <Grid Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Margin="4,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="90" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="MLC" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" Text="{Binding MlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
+                    <TextBlock Grid.Column="2" Text="TLC" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="3" Text="{Binding TlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
+                    <TextBlock Grid.Column="4" Text="QLC" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="5" Text="{Binding QlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
             </Grid>
         </GroupBox>
 
-        <GroupBox Grid.Row="3" Header="参考文件 (码字对比)" Margin="0,0,0,12">
+        <GroupBox Grid.Row="2" Header="参考文件 (码字对比)" Margin="0,0,0,12">
             <Grid Margin="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120" />

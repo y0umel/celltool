@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ScottPlot" Version="5.1.59" />
+    <PackageReference Include="EPPlus" Version="7.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/CellTool/Models/AnalysisConfig.cs" Link="CellTool/Models/AnalysisConfig.cs" />
+    <Compile Include="../../src/CellTool/Models/AnalysisResult.cs" Link="CellTool/Models/AnalysisResult.cs" />
+    <Compile Include="../../src/CellTool/Models/ChipInfo.cs" Link="CellTool/Models/ChipInfo.cs" />
+    <Compile Include="../../src/CellTool/Models/CodewordErrorStat.cs" Link="CellTool/Models/CodewordErrorStat.cs" />
+    <Compile Include="../../src/CellTool/Models/GroupModel.cs" Link="CellTool/Models/GroupModel.cs" />
+    <Compile Include="../../src/CellTool/Models/StatePeakInfo.cs" Link="CellTool/Models/StatePeakInfo.cs" />
+    <Compile Include="../../src/CellTool/Models/VoltageFileInfo.cs" Link="CellTool/Models/VoltageFileInfo.cs" />
+    <Compile Include="../../src/CellTool/Services/AnalysisEngine.cs" Link="CellTool/Services/AnalysisEngine.cs" />
+    <Compile Include="../../src/CellTool/Services/CodewordAnalyzer.cs" Link="CellTool/Services/CodewordAnalyzer.cs" />
+    <Compile Include="../../src/CellTool/Services/ExcelParser.cs" Link="CellTool/Services/ExcelParser.cs" />
+    <Compile Include="../../src/CellTool/Services/GrayCodeDecoder.cs" Link="CellTool/Services/GrayCodeDecoder.cs" />
+    <Compile Include="../../src/CellTool/Services/GroupModelParser.cs" Link="CellTool/Services/GroupModelParser.cs" />
+    <Compile Include="../../src/CellTool/Services/VoltageFileReader.cs" Link="CellTool/Services/VoltageFileReader.cs" />
+  </ItemGroup>
+
+</Project>

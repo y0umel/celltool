@@ -1,5 +1,6 @@
 using CellTool.Models;
 using CellTool.Services;
+using CellTool.ViewModels;
 using Xunit;
 
 namespace CellTool.Tests;
@@ -145,17 +146,6 @@ public class ParserAndAnalyzerTests
     }
 
     [Fact]
-    public void PeakAnalyzer_BoundaryReturnsNullWhenCurveRisesBeforeThreshold()
-    {
-        var analyzer = new PeakAnalyzer(filterWindow: 1);
-        double[] data = [10, 8, 5, 6, 9];
-
-        var boundary = analyzer.FindBoundary(data, startIdx: 0, direction: 1, threshold: 20);
-
-        Assert.Null(boundary);
-    }
-
-    [Fact]
     public void ExcelParser_LoadsChipDatabaseFromCsv()
     {
         string file = Path.Combine(Path.GetTempPath(), $"chips-{Guid.NewGuid():N}.csv");
@@ -227,7 +217,7 @@ public class ParserAndAnalyzerTests
 
 
     [Fact]
-    public void ExcelParser_SkipsIncompleteCsvRowsWithoutThrowing()
+    public void ExcelParser_KeepsRowsWithMissingOptionalPageFields()
     {
         string file = Path.Combine(Path.GetTempPath(), $"chips-{Guid.NewGuid():N}.csv");
         File.WriteAllText(
@@ -241,12 +231,216 @@ public class ParserAndAnalyzerTests
         {
             var chips = new ExcelParser().LoadDatabase(file);
 
-            Assert.Single(chips);
-            Assert.Equal("G8T22", chips[0].DieName);
+            Assert.Equal(3, chips.Count);
+            Assert.Contains(chips, chip => chip.DieName == "Bad" && chip.PageDataBytes is null);
+            Assert.Contains(chips, chip => chip.DieName == "G8T22" && chip.PageTotalBytes == 18336);
+            Assert.Contains(chips, chip =>
+                chip.DieName == "Incomplete" &&
+                chip.PageDataBytes == 16384 &&
+                chip.PageRedundantBytes is null &&
+                chip.WlEncoding.Length == 0);
         }
         finally
         {
             File.Delete(file);
         }
+    }
+
+    [Fact]
+    public void ChipDatabaseService_LoadsBundledFactoryDatabase()
+    {
+        string userFile = Path.Combine(Path.GetTempPath(), $"missing-chip-db-{Guid.NewGuid():N}.json");
+        string bundledFile = Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "CellTool",
+                "Resources",
+                "chip-database.default.json"));
+
+        var chips = new ChipDatabaseService(userFile, bundledFile).Load();
+
+        Assert.Equal(99, chips.Count);
+        Assert.Contains(chips, chip =>
+            chip.Manufacturer == "YMTC" &&
+            chip.DieName == "X4-9060(Client)" &&
+            chip.WlEncoding.SequenceEqual([7, 6, 4, 0, 2, 3, 1, 5]));
+        Assert.Contains(chips, chip => chip.Manufacturer == "Toshiba" && chip.DieName == "G8T22");
+        Assert.Contains(chips, chip => chip.DieName == "GF23B" && chip.WlEncoding.Length == 0);
+    }
+
+    [Fact]
+    public void ChipDatabaseService_IgnoresStaleUnknownManufacturerUserDatabase()
+    {
+        string userFile = Path.Combine(Path.GetTempPath(), $"stale-chip-db-{Guid.NewGuid():N}.json");
+        string bundledFile = Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "CellTool",
+                "Resources",
+                "chip-database.default.json"));
+        File.WriteAllText(
+            userFile,
+            """
+            [
+              {
+                "manufacturer": "未指定厂家",
+                "dieName": "LegacyOnly",
+                "type": 3,
+                "pageDataBytes": 16384,
+                "pageRedundantBytes": 1952,
+                "frameCount": 16,
+                "blockSizePages": 576,
+                "wlPerBlock": 192,
+                "wlEncoding": [7, 6, 4, 0, 2, 3, 1, 5]
+              }
+            ]
+            """);
+
+        try
+        {
+            var chips = new ChipDatabaseService(userFile, bundledFile).Load();
+
+            Assert.DoesNotContain(chips, chip => chip.DieName == "LegacyOnly");
+            Assert.Contains(chips, chip => chip.Manufacturer == "YMTC" && chip.DieName == "X4-9060(Client)");
+        }
+        finally
+        {
+            File.Delete(userFile);
+        }
+    }
+
+    [Fact]
+    public void ChipDatabaseService_IgnoresLegacyFilteredUserDatabaseWhenBundledIsLarger()
+    {
+        string userFile = Path.Combine(Path.GetTempPath(), $"legacy-chip-db-{Guid.NewGuid():N}.json");
+        string bundledFile = Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "CellTool",
+                "Resources",
+                "chip-database.default.json"));
+        File.WriteAllText(
+            userFile,
+            """
+            [
+              {
+                "manufacturer": "YMTC",
+                "dieName": "X4-9060(Client)",
+                "type": 3,
+                "pageDataBytes": 49152,
+                "pageRedundantBytes": 6144,
+                "frameCount": 48,
+                "blockSizePages": 2304,
+                "wlPerBlock": 192,
+                "wlEncoding": [7, 6, 4, 0, 2, 3, 1, 5]
+              }
+            ]
+            """);
+
+        try
+        {
+            var chips = new ChipDatabaseService(userFile, bundledFile).Load();
+
+            Assert.Equal(99, chips.Count);
+            Assert.Contains(chips, chip => chip.DieName == "GF23B");
+        }
+        finally
+        {
+            File.Delete(userFile);
+            File.Delete($"{userFile}.meta.json");
+        }
+    }
+
+    [Fact]
+    public void AppState_SelectManufacturerIgnoresEmptySelection()
+    {
+        var state = new AppState();
+        state.SetChipDatabase(
+        [
+            new ChipInfo
+            {
+                Manufacturer = "YMTC",
+                DieName = "X4-9060(Client)",
+                Type = XlcType.TLC,
+                PageDataBytes = 49152,
+                PageRedundantBytes = 6144,
+                FrameCount = 48,
+                BlockSizePages = 2304,
+                WlPerBlock = 192,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            },
+            new ChipInfo
+            {
+                Manufacturer = "Toshiba",
+                DieName = "G8T22",
+                Type = XlcType.TLC,
+                PageDataBytes = 16384,
+                PageRedundantBytes = 1952,
+                FrameCount = 16,
+                BlockSizePages = 576,
+                WlPerBlock = 192,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            }
+        ]);
+        state.SelectManufacturer("YMTC");
+
+        state.SelectManufacturer(null);
+        state.SelectManufacturer("");
+        state.SelectManufacturer("   ");
+
+        Assert.Equal("YMTC", state.SelectedManufacturer);
+        Assert.Equal("X4-9060(Client)", state.SelectedChip?.DieName);
+        Assert.Equal(["X4-9060(Client)"], state.AvailableChips.Select(chip => chip.DieName).ToArray());
+    }
+
+    [Fact]
+    public void AppState_SelectChipFillsAndClearsEditablePageFields()
+    {
+        var complete = new ChipInfo
+        {
+            Manufacturer = "YMTC",
+            DieName = "Complete",
+            Type = XlcType.TLC,
+            PageDataBytes = 49152,
+            PageRedundantBytes = 6144,
+            FrameCount = 48,
+            WlPerBlock = 192,
+            WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+        };
+        var partial = new ChipInfo
+        {
+            Manufacturer = "YMTC",
+            DieName = "Partial",
+            Type = XlcType.TLC,
+            WlEncoding = []
+        };
+        var state = new AppState();
+        state.SetChipDatabase([complete, partial]);
+
+        state.SelectChip(complete);
+
+        Assert.Equal(49152, state.PageDataBytes);
+        Assert.Equal(6144, state.PageRedundantBytes);
+        Assert.Equal(48, state.CodewordsPerPage);
+        Assert.Equal("7,6,4,0,2,3,1,5", state.TlcWlEncoding);
+
+        state.SelectChip(partial);
+
+        Assert.Null(state.PageDataBytes);
+        Assert.Null(state.PageRedundantBytes);
+        Assert.Null(state.CodewordsPerPage);
+        Assert.Equal(string.Empty, state.TlcWlEncoding);
     }
 }

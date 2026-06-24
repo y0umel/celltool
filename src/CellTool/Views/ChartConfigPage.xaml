@@ -76,8 +76,39 @@
 
         <Grid Grid.Column="1" Margin="12,0,0,0"
               Background="{DynamicResource CellTool.SurfaceBrush}">
-            <sp:WpfPlot x:Name="ChartPlot"
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="150" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <sp:WpfPlot x:Name="LinearChartPlot"
+                        Grid.Row="0"
                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+            <sp:WpfPlot x:Name="LogChartPlot"
+                        Grid.Row="1"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+
+            <GroupBox Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                      Header="LOR / ROR" Margin="8,0,0,0">
+                <DataGrid ItemsSource="{Binding LimitMissStats}"
+                          AutoGenerateColumns="False"
+                          HeadersVisibility="Column"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserResizeRows="False"
+                          IsReadOnly="True"
+                          Margin="4">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="L" Binding="{Binding Label}" Width="*" />
+                        <DataGridTextColumn Header="LOR" Binding="{Binding LeftOutOfRange}" Width="*" />
+                        <DataGridTextColumn Header="ROR" Binding="{Binding RightOutOfRange}" Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </GroupBox>
         </Grid>
     </Grid>
 

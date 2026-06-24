@@ -13,6 +13,9 @@ public class StatePeakInfo
     public double? RightBoundaryMv => RightBoundaryCode;
     public int TotalCellCount { get; init; }
     public double PeakIncrementValue { get; init; }
+    public double? AlignmentShiftMv { get; init; }
+    public double? AlignmentScore { get; init; }
+    public string ObservationSources { get; init; } = string.Empty;
 
     public double? WindowWidthCode =>
         LeftBoundaryCode.HasValue && RightBoundaryCode.HasValue

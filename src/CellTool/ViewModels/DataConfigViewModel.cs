@@ -1,6 +1,4 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
-using CellTool.Models;
 using CellTool.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,9 +9,7 @@ public partial class DataConfigViewModel : ObservableObject
 {
     private readonly AppState state;
     private readonly IUserDialogService dialogs;
-    private readonly ExcelParser excelParser = new();
     private readonly GroupModelParser groupModelParser = new();
-    private bool suppressSelectionUpdates;
 
     public DataConfigViewModel()
         : this(AppServices.State, AppServices.Dialogs)
@@ -26,17 +22,6 @@ public partial class DataConfigViewModel : ObservableObject
         this.dialogs = dialogs;
         this.state.PropertyChanged += OnStatePropertyChanged;
         RefreshDisplayState();
-    }
-
-    public string ExcelFilePath
-    {
-        get => state.ExcelFilePath;
-        set
-        {
-            if (state.ExcelFilePath == value) return;
-            state.ExcelFilePath = value;
-            OnPropertyChanged();
-        }
     }
 
     public string GroupModelFilePath
@@ -58,6 +43,42 @@ public partial class DataConfigViewModel : ObservableObject
             if (state.ReferenceFilePath == value) return;
             state.ReferenceFilePath = value;
             OnPropertyChanged();
+        }
+    }
+
+    public int? PageDataBytes
+    {
+        get => state.PageDataBytes;
+        set
+        {
+            if (state.PageDataBytes == value) return;
+            state.PageDataBytes = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CodewordBytes));
+        }
+    }
+
+    public int? PageRedundantBytes
+    {
+        get => state.PageRedundantBytes;
+        set
+        {
+            if (state.PageRedundantBytes == value) return;
+            state.PageRedundantBytes = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CodewordBytes));
+        }
+    }
+
+    public int? CodewordsPerPage
+    {
+        get => state.CodewordsPerPage;
+        set
+        {
+            if (state.CodewordsPerPage == value) return;
+            state.CodewordsPerPage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CodewordBytes));
         }
     }
 
@@ -116,55 +137,80 @@ public partial class DataConfigViewModel : ObservableObject
         }
     }
 
-    public ChipInfo? SelectedChip
+    public double MlcLevelSpacingMv
     {
-        get => state.SelectedChip;
+        get => state.MlcLevelSpacingMv;
         set
         {
-            if (state.SelectedChip == value) return;
-            state.SelectedChip = value;
+            if (Math.Abs(state.MlcLevelSpacingMv - value) < 0.001) return;
+            state.MlcLevelSpacingMv = value;
             OnPropertyChanged();
-            OnSelectedChipChanged(value);
         }
     }
 
-    public string SelectedManufacturer
+    public double TlcLevelSpacingMv
     {
-        get => state.SelectedManufacturer;
+        get => state.TlcLevelSpacingMv;
         set
         {
-            if (state.SelectedManufacturer == value) return;
-            state.SelectedManufacturer = value;
+            if (Math.Abs(state.TlcLevelSpacingMv - value) < 0.001) return;
+            state.TlcLevelSpacingMv = value;
             OnPropertyChanged();
-            OnSelectedManufacturerChanged(value);
         }
     }
 
-    [ObservableProperty]
-    private int _codewordBytes;
+    public double QlcLevelSpacingMv
+    {
+        get => state.QlcLevelSpacingMv;
+        set
+        {
+            if (Math.Abs(state.QlcLevelSpacingMv - value) < 0.001) return;
+            state.QlcLevelSpacingMv = value;
+            OnPropertyChanged();
+        }
+    }
 
-    [ObservableProperty]
-    private string _chipStatus = "未选择芯片";
+    public int? CodewordBytes
+    {
+        get
+        {
+            if (state.PageDataBytes is not > 0 ||
+                state.PageRedundantBytes is null or < 0 ||
+                state.CodewordsPerPage is not > 0)
+            {
+                return null;
+            }
+
+            int pageTotalBytes = state.PageDataBytes.Value + state.PageRedundantBytes.Value;
+            return pageTotalBytes / state.CodewordsPerPage.Value;
+        }
+    }
+    public IReadOnlyList<string> GrayCodeOrders { get; } = new[] { "U-M-L", "U-L-M", "M-U-L", "M-L-U", "L-U-M", "L-M-U" };
 
     [ObservableProperty]
     private string _groupModelStatus = "未加载组模型";
-
-    public ObservableCollection<string> AvailableManufacturers => state.AvailableManufacturers;
-    public ObservableCollection<ChipInfo> AvailableChips => state.AvailableChips;
-    public IReadOnlyList<string> GrayCodeOrders { get; } = new[] { "U-M-L", "U-L-M", "M-U-L", "M-L-U", "L-U-M", "L-M-U" };
 
     private void OnStatePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
-            case nameof(AppState.ExcelFilePath):
-                OnPropertyChanged(nameof(ExcelFilePath));
-                break;
             case nameof(AppState.GroupModelFilePath):
                 OnPropertyChanged(nameof(GroupModelFilePath));
                 break;
             case nameof(AppState.ReferenceFilePath):
                 OnPropertyChanged(nameof(ReferenceFilePath));
+                break;
+            case nameof(AppState.PageDataBytes):
+                OnPropertyChanged(nameof(PageDataBytes));
+                OnPropertyChanged(nameof(CodewordBytes));
+                break;
+            case nameof(AppState.PageRedundantBytes):
+                OnPropertyChanged(nameof(PageRedundantBytes));
+                OnPropertyChanged(nameof(CodewordBytes));
+                break;
+            case nameof(AppState.CodewordsPerPage):
+                OnPropertyChanged(nameof(CodewordsPerPage));
+                OnPropertyChanged(nameof(CodewordBytes));
                 break;
             case nameof(AppState.GrayCodeOrder):
                 OnPropertyChanged(nameof(GrayCodeOrder));
@@ -181,42 +227,21 @@ public partial class DataConfigViewModel : ObservableObject
             case nameof(AppState.QlcWlEncoding):
                 OnPropertyChanged(nameof(QlcWlEncoding));
                 break;
+            case nameof(AppState.MlcLevelSpacingMv):
+                OnPropertyChanged(nameof(MlcLevelSpacingMv));
+                break;
+            case nameof(AppState.TlcLevelSpacingMv):
+                OnPropertyChanged(nameof(TlcLevelSpacingMv));
+                break;
+            case nameof(AppState.QlcLevelSpacingMv):
+                OnPropertyChanged(nameof(QlcLevelSpacingMv));
+                break;
             case nameof(AppState.SelectedChip):
-                OnPropertyChanged(nameof(SelectedChip));
+                OnPropertyChanged(nameof(CodewordBytes));
                 break;
-            case nameof(AppState.SelectedManufacturer):
-                OnPropertyChanged(nameof(SelectedManufacturer));
-                if (!suppressSelectionUpdates &&
-                    !string.Equals(state.SelectedChip?.Manufacturer, state.SelectedManufacturer, StringComparison.OrdinalIgnoreCase))
-                {
-                    OnSelectedManufacturerChanged(state.SelectedManufacturer);
-                }
+            case nameof(AppState.LoadedGroupModel):
+                RefreshDisplayState();
                 break;
-            case nameof(AppState.SelectedDieName):
-                if (!suppressSelectionUpdates &&
-                    !string.Equals(state.SelectedChip?.DieName, state.SelectedDieName, StringComparison.OrdinalIgnoreCase))
-                {
-                    RestoreChipSelection();
-                }
-                break;
-        }
-    }
-
-    [RelayCommand]
-    private void LoadExcel()
-    {
-        var file = dialogs.OpenFile(
-            "Select Chip Database",
-            "Chip database (*.csv;*.txt;*.xlsx;*.xls)|*.csv;*.txt;*.xlsx;*.xls|CSV files (*.csv;*.txt)|*.csv;*.txt|Excel files (*.xlsx;*.xls)|*.xlsx;*.xls|All files (*.*)|*.*");
-        if (file is null) return;
-
-        try
-        {
-            LoadExcelFromPath(file);
-        }
-        catch (Exception ex)
-        {
-            dialogs.ShowError($"Failed to load Excel: {ex.Message}");
         }
     }
 
@@ -226,15 +251,19 @@ public partial class DataConfigViewModel : ObservableObject
         var file = dialogs.OpenFile("Select GroupModel File", "Text files (*.txt;*.csv)|*.txt;*.csv|All files (*.*)|*.*");
         if (file is null) return;
 
-        if (SelectedChip is null)
+        if (state.SelectedChip is null)
         {
-            dialogs.ShowWarning("请先选择芯片。");
+            dialogs.ShowWarning("请先在首页选择芯片。");
             return;
         }
 
         try
         {
-            LoadGroupModelFromPath(file);
+            GroupModelFilePath = file;
+            state.LoadedGroupModel = state.SelectedChip.WlPerBlock is > 0
+                ? groupModelParser.LoadFromFile(file, state.SelectedChip.WlPerBlock.Value)
+                : groupModelParser.LoadFromFile(file, state.WlCount);
+            RefreshDisplayState();
         }
         catch (Exception ex)
         {
@@ -250,187 +279,10 @@ public partial class DataConfigViewModel : ObservableObject
             ReferenceFilePath = file;
     }
 
-    public void LoadExcelFromPath(string filePath)
-    {
-        ExcelFilePath = filePath;
-        state.AllChips.Clear();
-        foreach (var chip in excelParser.LoadDatabase(filePath))
-            state.AllChips.Add(chip);
-
-        RefreshManufacturers();
-
-        ChipStatus = $"Loaded {state.AllChips.Count} chips.";
-
-        RestoreChipSelection();
-    }
-
-    public void LoadGroupModelFromPath(string filePath)
-    {
-        if (SelectedChip is null)
-            throw new InvalidOperationException("Please select a chip first.");
-
-        GroupModelFilePath = filePath;
-        state.LoadedGroupModel = groupModelParser.LoadFromFile(
-            filePath,
-            SelectedChip.WlPerBlock);
-        GroupModelStatus = $"Loaded {state.LoadedGroupModel.Entries.Count} WLs.";
-    }
-
     public void RefreshDisplayState()
     {
-        if (state.AllChips.Count > 0)
-        {
-            RefreshManufacturers();
-            RestoreChipSelection();
-        }
-        else if (state.SelectedChip is not null)
-        {
-            OnSelectedChipChanged(state.SelectedChip);
-        }
-        else
-        {
-            CodewordBytes = 0;
-            ChipStatus = "未选择芯片";
-        }
-
         GroupModelStatus = state.LoadedGroupModel is null
             ? "未加载组模型"
             : $"Loaded {state.LoadedGroupModel.Entries.Count} WLs.";
-    }
-
-    private void OnSelectedChipChanged(ChipInfo? value)
-    {
-        if (value is not null)
-        {
-            CodewordBytes = value.CodewordBytes;
-            bool chipChanged =
-                !string.Equals(state.SelectedManufacturer, value.Manufacturer, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(state.SelectedDieName, value.DieName, StringComparison.OrdinalIgnoreCase);
-            state.SelectedManufacturer = value.Manufacturer;
-            state.SelectedDieName = value.DieName;
-            SetEncodingForChipType(value, chipChanged);
-            ChipStatus = $"{value.Manufacturer} / {value.DieName} - {value.Type}, {value.PageTotalBytes} B/page, {value.CodewordBytes} B/CW";
-            if (state.WlCount <= 0 || state.WlCount > value.WlPerBlock)
-                state.WlCount = value.WlPerBlock;
-        }
-        else
-        {
-            CodewordBytes = 0;
-            ChipStatus = "未选择芯片";
-        }
-    }
-
-    private void OnSelectedManufacturerChanged(string? value)
-    {
-        if (suppressSelectionUpdates)
-            return;
-
-        RefreshChipModelsForManufacturer(value);
-        SelectedChip = AvailableChips.FirstOrDefault();
-    }
-
-    private void RefreshManufacturers()
-    {
-        AvailableManufacturers.Clear();
-        foreach (var manufacturer in state.AllChips
-                     .Select(c => NormalizeManufacturer(c.Manufacturer))
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
-        {
-            AvailableManufacturers.Add(manufacturer);
-        }
-    }
-
-    private void RestoreChipSelection()
-    {
-        suppressSelectionUpdates = true;
-        try
-        {
-            var selectedChip = FindSavedChip();
-            var manufacturer = NormalizeManufacturer(selectedChip?.Manufacturer);
-            if (string.IsNullOrWhiteSpace(manufacturer) ||
-                !AvailableManufacturers.Contains(manufacturer))
-            {
-                manufacturer = AvailableManufacturers.FirstOrDefault() ?? string.Empty;
-            }
-
-            state.SelectedManufacturer = manufacturer;
-            OnPropertyChanged(nameof(SelectedManufacturer));
-            RefreshChipModelsForManufacturer(manufacturer);
-            SelectedChip = selectedChip is not null && AvailableChips.Contains(selectedChip)
-                ? selectedChip
-                : AvailableChips.FirstOrDefault();
-            OnSelectedChipChanged(SelectedChip);
-        }
-        finally
-        {
-            suppressSelectionUpdates = false;
-        }
-    }
-
-    private ChipInfo? FindSavedChip()
-    {
-        if (!string.IsNullOrWhiteSpace(state.SelectedManufacturer) &&
-            !string.IsNullOrWhiteSpace(state.SelectedDieName))
-        {
-            var exactMatch = state.AllChips.FirstOrDefault(c =>
-                string.Equals(c.Manufacturer, state.SelectedManufacturer, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(c.DieName, state.SelectedDieName, StringComparison.OrdinalIgnoreCase));
-            if (exactMatch is not null)
-                return exactMatch;
-        }
-
-        if (!string.IsNullOrWhiteSpace(state.SelectedDieName))
-        {
-            return state.AllChips.FirstOrDefault(c =>
-                string.Equals(c.DieName, state.SelectedDieName, StringComparison.OrdinalIgnoreCase));
-        }
-
-        return null;
-    }
-
-    private void RefreshChipModelsForManufacturer(string? manufacturer)
-    {
-        AvailableChips.Clear();
-        var normalizedManufacturer = NormalizeManufacturer(manufacturer);
-
-        foreach (var chip in state.AllChips
-                     .Where(c => string.Equals(
-                         NormalizeManufacturer(c.Manufacturer),
-                         normalizedManufacturer,
-                         StringComparison.OrdinalIgnoreCase))
-                     .OrderBy(c => c.DieName, StringComparer.OrdinalIgnoreCase))
-        {
-            AvailableChips.Add(chip);
-        }
-    }
-
-    private static string NormalizeManufacturer(string? manufacturer) =>
-        string.IsNullOrWhiteSpace(manufacturer)
-            ? ChipInfo.UnknownManufacturer
-            : manufacturer.Trim();
-
-    private void SetEncodingForChipType(ChipInfo chip, bool overwrite)
-    {
-        var text = string.Join(",", chip.WlEncoding);
-        switch (chip.Type)
-        {
-            case XlcType.SLC:
-                if (overwrite || string.IsNullOrWhiteSpace(SlcWlEncoding))
-                    SlcWlEncoding = text;
-                break;
-            case XlcType.MLC:
-                if (overwrite || string.IsNullOrWhiteSpace(MlcWlEncoding))
-                    MlcWlEncoding = text;
-                break;
-            case XlcType.TLC:
-                if (overwrite || string.IsNullOrWhiteSpace(TlcWlEncoding))
-                    TlcWlEncoding = text;
-                break;
-            case XlcType.QLC:
-                if (overwrite || string.IsNullOrWhiteSpace(QlcWlEncoding))
-                    QlcWlEncoding = text;
-                break;
-        }
     }
 }

@@ -51,15 +51,16 @@ Core columns (selected die auto-fills from these):
 2. **Page extraction**: MemoryMappedFile reads target WL/page bytes
 3. **Gray code decode**: Assemble target page bits -> raw Gray code; GroupModel row page count selects SLC/MLC/TLC/QLC encoding
 4. **Majority vote**: Ground truth per cell across all voltages. Ties -> higher state
-5. **Increment curve**: One total curve; each point is the number of cells whose first stable raw Gray change from the source baseline occurs at that voltage-code file
+5. **Vt reconstruction curves**: One curve per physical source level. Map source and current raw Gray codes through WL encoding, count cells from each source level that are read as any other level, convert the source-level cumulative error count to positive adjacent-offset deltas, then place each level curve on the global read-boundary axis using configured L spacing. TLC outputs `L0` through `L7`.
 6. **0.1% boundaries**: Integrate outward from peak until `(totalCells/8) * 0.1%`. Overlap -> err
-7. **Best read codes**: Deferred while the single total-change curve is used
+7. **Best read codes**: Deferred until boundary-search validation is reintroduced
 8. **Codeword errors**: Source-vs-reference comparison, page-internal codeword slicing
 
 ## Key Design Decisions (from requirements review)
 
 - **Codeword size**: Dynamically computed as `(PageDataBytes + PageRedundantBytes) / FrameCount`
 - **Gray code assembly**: Default U-M-L (MSB=U, LSB=L)
+- **Vt reconstruction**: Source file is the baseline. WL encoding maps raw Gray codes to physical levels. For SLC `0->1`, the plotted curve is the adjacent-offset increment of cumulative source-level errors. Global boundary positions use manual L spacing defaults of `MLC=145`, `TLC=80`, and `QLC=40` code.
 - **0.1% boundary overlap**: Mark as `err` if adjacent-state rising edge encountered before threshold
 - **Low-pass filter**: Moving average, window=3, applied before boundary search
 - **HTTP API / file monitor / CLI**: All deferred — stub interfaces only
@@ -68,8 +69,8 @@ Core columns (selected die auto-fills from these):
 
 ## Output Products
 
-- **PNG**: Vt increment distribution chart with one total raw Gray change curve
-- **CSV reports**: Total change curve metadata and codeword error statistics; peak and best-read fields are marked not calculated until multi-peak detection returns
+- **PNG**: Reconstructed Vt distribution chart with physical level curves, e.g. TLC `L0` through `L7`, rendered as linear and log subplots
+- **CSV reports**: Per-level peak/window metadata, estimated read-boundary positions, delta peak counts, and codeword error statistics
 - **JSON config**: All UI parameters for save/restore
 
 ## Development Stages
