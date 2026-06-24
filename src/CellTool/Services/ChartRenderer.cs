@@ -130,12 +130,65 @@ public class ChartRenderer
             var ys = logScale
                 ? curve.Select(y => Math.Log10(Math.Max(1, y))).ToArray()
                 : curve;
-            var scatter = plot.Add.Scatter(curveX, ys);
-            scatter.Color = color;
-            scatter.LineWidth = 2;
-            scatter.MarkerSize = 0;
-            scatter.LegendText = label;
+            bool legendAdded = false;
+            foreach (var segment in SplitSegments(curveX, ys))
+            {
+                var scatter = plot.Add.Scatter(segment.X, segment.Y);
+                scatter.Color = color;
+                scatter.LineWidth = 2;
+                scatter.MarkerSize = 0;
+                if (!legendAdded)
+                {
+                    scatter.LegendText = label;
+                    legendAdded = true;
+                }
+            }
         }
+    }
+
+    private static IEnumerable<(double[] X, double[] Y)> SplitSegments(double[] xs, double[] ys)
+    {
+        int count = Math.Min(xs.Length, ys.Length);
+        if (count == 0)
+            yield break;
+
+        var segmentX = new List<double> { xs[0] };
+        var segmentY = new List<double> { ys[0] };
+        double typicalStep = EstimateTypicalStep(xs);
+        double maxGap = Math.Max(2, typicalStep * 3);
+
+        for (int i = 1; i < count; i++)
+        {
+            if (xs[i] - xs[i - 1] > maxGap)
+            {
+                yield return (segmentX.ToArray(), segmentY.ToArray());
+                segmentX.Clear();
+                segmentY.Clear();
+            }
+
+            segmentX.Add(xs[i]);
+            segmentY.Add(ys[i]);
+        }
+
+        if (segmentX.Count > 0)
+            yield return (segmentX.ToArray(), segmentY.ToArray());
+    }
+
+    private static double EstimateTypicalStep(double[] xs)
+    {
+        var diffs = new List<double>();
+        for (int i = 1; i < xs.Length; i++)
+        {
+            double diff = xs[i] - xs[i - 1];
+            if (diff > 0)
+                diffs.Add(diff);
+        }
+
+        if (diffs.Count == 0)
+            return 1;
+
+        diffs.Sort();
+        return diffs[diffs.Count / 2];
     }
 
     private static void AddMarkersAndLegend(
@@ -210,98 +263,9 @@ public class ChartRenderer
             return Array.Empty<ReadValley>();
 
         double spacing = EstimateReadSpacing(result);
-        var valleys = new List<ReadValley>(boundaryCount);
-
-        for (int boundary = 0; boundary < boundaryCount; boundary++)
-        {
-            int leftIndex = boundary;
-            int rightIndex = boundary + 1;
-            double nominal = boundary * spacing;
-            double searchStart = nominal - spacing / 2;
-            double searchEnd = nominal + spacing / 2;
-
-            var leftX = GetCurveXValues(result, Array.Empty<double>(), leftIndex, GetCurveLength(result, leftIndex));
-            var leftY = GetCurveValues(result, leftIndex);
-            var rightX = GetCurveXValues(result, Array.Empty<double>(), rightIndex, GetCurveLength(result, rightIndex));
-            var rightY = GetCurveValues(result, rightIndex);
-
-            double leftPeakX = FindPeakX(leftX, leftY);
-            double rightPeakX = FindPeakX(rightX, rightY);
-            if (!double.IsNaN(leftPeakX) && !double.IsNaN(rightPeakX) && !leftPeakX.Equals(rightPeakX))
-            {
-                double peakStart = Math.Min(leftPeakX, rightPeakX);
-                double peakEnd = Math.Max(leftPeakX, rightPeakX);
-                double constrainedStart = Math.Max(searchStart, peakStart);
-                double constrainedEnd = Math.Min(searchEnd, peakEnd);
-                if (constrainedStart <= constrainedEnd)
-                {
-                    searchStart = constrainedStart;
-                    searchEnd = constrainedEnd;
-                }
-            }
-
-            double threshold = EstimateBoundaryThreshold(result, leftIndex, rightIndex);
-            valleys.Add(FindReadValley(boundary, nominal, searchStart, searchEnd, leftX, leftY, rightX, rightY, threshold));
-        }
-
-        return valleys;
-    }
-
-    private static ReadValley FindReadValley(
-        int boundary,
-        double nominal,
-        double searchStart,
-        double searchEnd,
-        double[] leftX,
-        double[] leftY,
-        double[] rightX,
-        double[] rightY,
-        double threshold)
-    {
-        var leftMap = BuildPointMap(leftX, leftY);
-        var rightMap = BuildPointMap(rightX, rightY);
-        int start = (int)Math.Ceiling(searchStart);
-        int end = (int)Math.Floor(searchEnd);
-        if (start > end)
-        {
-            start = end = (int)Math.Round(nominal);
-        }
-
-        double bestX = nominal;
-        double bestValue = double.PositiveInfinity;
-        double bestDistance = double.PositiveInfinity;
-        bool foundUnderThreshold = false;
-
-        for (int x = start; x <= end; x++)
-        {
-            double value = GetY(leftMap, x) + GetY(rightMap, x);
-            double distance = Math.Abs(x - nominal);
-            bool underThreshold = value <= threshold;
-
-            if (underThreshold)
-            {
-                if (!foundUnderThreshold || distance < bestDistance ||
-                    (Math.Abs(distance - bestDistance) < 0.001 && value < bestValue))
-                {
-                    bestX = x;
-                    bestValue = value;
-                    bestDistance = distance;
-                    foundUnderThreshold = true;
-                }
-
-                continue;
-            }
-
-            if (!foundUnderThreshold &&
-                (value < bestValue || (Math.Abs(value - bestValue) < 0.001 && distance < bestDistance)))
-            {
-                bestX = x;
-                bestValue = value;
-                bestDistance = distance;
-            }
-        }
-
-        return new ReadValley(boundary, bestX, bestValue, threshold);
+        return Enumerable.Range(0, boundaryCount)
+            .Select(boundary => new ReadValley(boundary, boundary * spacing))
+            .ToArray();
     }
 
     private static double EstimateReadSpacing(AnalysisResult result)
@@ -334,74 +298,6 @@ public class ChartRenderer
         };
     }
 
-    private static double EstimateBoundaryThreshold(AnalysisResult result, int leftIndex, int rightIndex)
-    {
-        int leftCount = GetStateCellCount(result, leftIndex);
-        int rightCount = GetStateCellCount(result, rightIndex);
-        double expected = Math.Max(leftCount, rightCount);
-        if (expected <= 0 && result.StateCount > 0)
-            expected = (double)result.TotalCells / result.StateCount;
-
-        return Math.Max(1, expected * 0.001);
-    }
-
-    private static int GetStateCellCount(AnalysisResult result, int stateIndex)
-    {
-        return result.StatePeaks
-            .FirstOrDefault(p => p.StateIndex == stateIndex)
-            ?.TotalCellCount ?? 0;
-    }
-
-    private static double[] GetCurveValues(AnalysisResult result, int curveIndex)
-    {
-        return curveIndex >= 0 && curveIndex < result.IncrementCurves.Length
-            ? result.IncrementCurves[curveIndex]
-            : Array.Empty<double>();
-    }
-
-    private static int GetCurveLength(AnalysisResult result, int curveIndex)
-    {
-        return curveIndex >= 0 && curveIndex < result.IncrementCurves.Length
-            ? result.IncrementCurves[curveIndex].Length
-            : 0;
-    }
-
-    private static Dictionary<int, double> BuildPointMap(double[] xs, double[] ys)
-    {
-        var map = new Dictionary<int, double>();
-        int count = Math.Min(xs.Length, ys.Length);
-        for (int i = 0; i < count; i++)
-        {
-            int x = (int)Math.Round(xs[i]);
-            map[x] = map.TryGetValue(x, out double current)
-                ? Math.Max(current, ys[i])
-                : ys[i];
-        }
-
-        return map;
-    }
-
-    private static double GetY(Dictionary<int, double> values, int x)
-    {
-        return values.TryGetValue(x, out double value) ? value : 0;
-    }
-
-    private static double FindPeakX(double[] xs, double[] ys)
-    {
-        int count = Math.Min(xs.Length, ys.Length);
-        if (count == 0)
-            return double.NaN;
-
-        int peak = 0;
-        for (int i = 1; i < count; i++)
-        {
-            if (ys[i] > ys[peak])
-                peak = i;
-        }
-
-        return xs[peak];
-    }
-
     private static void ApplyToolStyleLimits(Plot plot, AnalysisResult result, ChartConfig chartConfig, bool logScale)
     {
         var allX = result.IncrementCurveXValues.SelectMany(x => x).ToArray();
@@ -431,7 +327,7 @@ public class ChartRenderer
         }
     }
 
-    private readonly record struct ReadValley(int BoundaryIndex, double X, double ErrorCount, double Threshold);
+    private readonly record struct ReadValley(int BoundaryIndex, double X);
 
     private static void DrawLimitMissTable(string filePath, IReadOnlyList<LimitMissStat> stats)
     {

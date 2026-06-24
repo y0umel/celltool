@@ -150,6 +150,10 @@ public class AnalysisEngine
             ErrorTypeDiagnostics = reconstructed.Diagnostics,
             VoltageCodes = voltageCodes,
             TransitionLabels = transitionLabels,
+            LevelSpacingSuggestion = BuildLevelSpacingSuggestion(
+                statePeaks,
+                chip.StateCount,
+                EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount)),
             GroundTruth = groundTruth,
             TotalCells = totalCells,
             VoltageCount = voltageCount,
@@ -269,7 +273,7 @@ public class AnalysisEngine
         double levelSpacingMv,
         string grayCodeOrder)
     {
-        var levelDistributions = ComputeSourceLevelErrorDistributions(
+        var sourceLevelDistributions = ComputeSourceLevelErrorDistributions(
             rawGrayPerVoltage,
             sourceRawGrayStates,
             voltageCount,
@@ -278,9 +282,22 @@ public class AnalysisEngine
             wlCount,
             cellCount,
             stateCount);
+        var boundaryDistributions = ComputeSingleBitBoundaryDistributions(
+            rawGrayPerVoltage,
+            sourceRawGrayStates,
+            voltageCount,
+            groupModel,
+            modeEncodings,
+            wlCount,
+            cellCount,
+            stateCount,
+            grayCodeOrder);
         var displayVoltageCodes = voltageCodes;
         var labels = Enumerable.Range(0, stateCount)
             .Select(i => $"L{i}")
+            .ToArray();
+        var componentsByLevel = Enumerable.Range(0, stateCount)
+            .Select(_ => new List<BoundaryLevelComponent>())
             .ToArray();
         var curves = new double[stateCount][];
         var xValues = new double[stateCount][];
@@ -288,12 +305,49 @@ public class AnalysisEngine
         var integrals = new DistributionIntegralInfo[stateCount];
 
         double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
+        int boundaryCount = Math.Max(0, stateCount - 1);
+        for (int boundary = 0; boundary < boundaryCount && boundary < boundaryDistributions.Boundaries.Length; boundary++)
+        {
+            var descriptor = boundaryDistributions.Boundaries[boundary];
+            if (descriptor is null || !descriptor.IsValid)
+                continue;
+
+            double boundaryPositionCode = BoundaryPositionCode(boundary, spacingCode);
+            if (boundary < boundaryDistributions.LeftToRightCurves.Length)
+            {
+                AddBoundaryLevelComponent(
+                    componentsByLevel,
+                    descriptor.LeftLevel,
+                    boundary,
+                    boundaryPositionCode,
+                    boundaryDistributions.LeftToRightCurves[boundary],
+                    $"{labels[descriptor.LeftLevel]}->{labels[descriptor.RightLevel]}");
+            }
+
+            if (boundary < boundaryDistributions.RightToLeftCurves.Length)
+            {
+                AddBoundaryLevelComponent(
+                    componentsByLevel,
+                    descriptor.RightLevel,
+                    boundary,
+                    boundaryPositionCode,
+                    boundaryDistributions.RightToLeftCurves[boundary],
+                    $"{labels[descriptor.RightLevel]}->{labels[descriptor.LeftLevel]}");
+            }
+        }
+
         for (int level = 0; level < stateCount; level++)
         {
-            var rawDelta = ToEnvelopeDistributionDelta(levelDistributions.CumulativeCurves[level]);
-            var delta = rawDelta;
             double levelPositionCode = LevelPositionCode(level, stateCount, spacingCode);
-            var points = BuildBoundarySidePoints(levelPositionCode, displayVoltageCodes, delta);
+            var points = BuildMergedBoundarySidePoints(componentsByLevel[level], displayVoltageCodes);
+            var sourceRawDelta = ToEnvelopeDistributionDelta(sourceLevelDistributions.CumulativeCurves[level]);
+            bool useSourceFallback = ShouldUseSourceLevelFallback(
+                level,
+                stateCount,
+                points.Sum(p => p.Y),
+                level < sourceLevelDistributions.SourceCounts.Length ? sourceLevelDistributions.SourceCounts[level] : 0);
+            if (useSourceFallback)
+                points = BuildBoundarySidePoints(levelPositionCode, displayVoltageCodes, sourceRawDelta);
 
             xValues[level] = points.Select(p => p.X).ToArray();
             curves[level] = points.Select(p => p.Y).ToArray();
@@ -306,20 +360,29 @@ public class AnalysisEngine
                 PeakCode = peakIndex >= 0 ? xValues[level][peakIndex] : 0,
                 LeftBoundaryCode = xValues[level].Length > 0 ? xValues[level][0] : null,
                 RightBoundaryCode = xValues[level].Length > 0 ? xValues[level][^1] : null,
-                TotalCellCount = level < levelDistributions.SourceCounts.Length ? levelDistributions.SourceCounts[level] : 0,
+                TotalCellCount = level < sourceLevelDistributions.SourceCounts.Length ? sourceLevelDistributions.SourceCounts[level] : 0,
                 PeakIncrementValue = peakIndex >= 0 ? curves[level][peakIndex] : 0,
                 AlignmentShiftMv = levelPositionCode,
                 AlignmentScore = null,
-                ObservationSources = $"source L{level} read as other levels"
+                ObservationSources = useSourceFallback
+                    ? $"source L{level} read as other levels"
+                    : FormatBoundaryObservationSources(componentsByLevel[level])
             };
 
-            integrals[level] = BuildDistributionIntegralInfo(
-                level,
-                labels[level],
-                levelDistributions.SourceCounts,
-                levelDistributions.CumulativeCurves[level],
-                rawDelta,
-                delta);
+            integrals[level] = useSourceFallback
+                ? BuildSourceLevelDistributionIntegralInfo(
+                    level,
+                    labels[level],
+                    sourceLevelDistributions.SourceCounts,
+                    sourceLevelDistributions.CumulativeCurves[level],
+                    sourceRawDelta,
+                    curves[level])
+                : BuildBoundaryDistributionIntegralInfo(
+                    level,
+                    labels[level],
+                    sourceLevelDistributions.SourceCounts,
+                    curves[level],
+                    stateCount);
         }
 
         return new SourceLevelDistributionResult
@@ -328,13 +391,80 @@ public class AnalysisEngine
             XValues = xValues,
             Labels = labels,
             Peaks = peaks,
-            SourceCounts = levelDistributions.SourceCounts,
+            SourceCounts = sourceLevelDistributions.SourceCounts,
             Integrals = integrals,
             Diagnostics = Array.Empty<ErrorTypeDiagnosticInfo>()
         };
     }
 
-    private static DistributionIntegralInfo BuildDistributionIntegralInfo(
+    private static bool ShouldUseSourceLevelFallback(
+        int level,
+        int stateCount,
+        double boundaryObserved,
+        int sourceCount)
+    {
+        if (level != 0 && level != stateCount - 1)
+            return false;
+        if (sourceCount <= 0)
+            return boundaryObserved <= 0;
+
+        return boundaryObserved < sourceCount * 0.1;
+    }
+
+    private static void AddBoundaryLevelComponent(
+        List<BoundaryLevelComponent>[] componentsByLevel,
+        int targetLevel,
+        int boundaryIndex,
+        double boundaryCode,
+        double[] cumulativeCurve,
+        string directionLabel)
+    {
+        if (targetLevel < 0 || targetLevel >= componentsByLevel.Length)
+            return;
+
+        componentsByLevel[targetLevel].Add(new BoundaryLevelComponent(
+            boundaryIndex,
+            boundaryCode,
+            ToEnvelopeDistributionDelta(cumulativeCurve),
+            directionLabel));
+    }
+
+    private static string FormatBoundaryObservationSources(List<BoundaryLevelComponent> components)
+    {
+        if (components.Count == 0)
+            return "read-boundary directional increments";
+
+        return string.Join("; ", components
+            .Select(c => $"R{c.BoundaryIndex + 1} {c.DirectionLabel}")
+            .Distinct());
+    }
+
+    private static DistributionIntegralInfo BuildBoundaryDistributionIntegralInfo(
+        int level,
+        string label,
+        int[] sourceCounts,
+        double[] displayCurve,
+        int stateCount)
+    {
+        int sourceCount = level < sourceCounts.Length ? sourceCounts[level] : 0;
+        double displayObserved = displayCurve.Sum();
+        double missing = Math.Max(0, sourceCount - displayObserved);
+        double leftOutOfRange = level == 0 ? missing : 0;
+        double rightOutOfRange = level == stateCount - 1 ? missing : 0;
+
+        return new DistributionIntegralInfo
+        {
+            LevelIndex = level,
+            Label = label,
+            SourceCellCount = sourceCount,
+            RawObservedIntegral = displayObserved,
+            DisplayObservedIntegral = displayObserved,
+            LeftOutOfRangeEstimate = leftOutOfRange,
+            RightOutOfRangeEstimate = rightOutOfRange
+        };
+    }
+
+    private static DistributionIntegralInfo BuildSourceLevelDistributionIntegralInfo(
         int level,
         string label,
         int[] sourceCounts,
@@ -426,6 +556,91 @@ public class AnalysisEngine
         return level * spacingCode;
     }
 
+    private static double BoundaryPositionCode(int boundaryIndex, double spacingCode) =>
+        Math.Max(0, boundaryIndex) * spacingCode;
+
+    public static LevelSpacingSuggestionInfo? BuildLevelSpacingSuggestion(
+        StatePeakInfo[] peaks,
+        int stateCount,
+        double currentSpacingCode)
+    {
+        if (stateCount <= 2 || currentSpacingCode <= 0 || peaks.Length < stateCount)
+            return null;
+
+        if (peaks.Any(p => !string.IsNullOrWhiteSpace(p.ObservationSources) &&
+                           p.ObservationSources.Contains("R", StringComparison.Ordinal)))
+        {
+            return new LevelSpacingSuggestionInfo
+            {
+                CurrentSpacingCode = currentSpacingCode,
+                SuggestedSpacingCode = currentSpacingCode,
+                Confidence = 0,
+                ConfidenceLabel = "未启用",
+                Diagnostic = "当前曲线由多个读电压边界方向分量拼接，同一 L 可能有多个峰；自动峰距推断容易被子峰误导，暂按手动 L 间距绘图。",
+                SampleCount = 0,
+                MedianGapCode = currentSpacingCode,
+                MaxDeviationCode = 0
+            };
+        }
+
+        int lastRegularLevel = Math.Min(stateCount - 2, peaks.Length - 1);
+        var peakCodes = new List<double>();
+        for (int level = 1; level <= lastRegularLevel; level++)
+        {
+            var peak = peaks.FirstOrDefault(p => p.StateIndex == level);
+            if (peak?.PeakIncrementValue > 0)
+                peakCodes.Add(peak.PeakCode);
+        }
+
+        var gaps = new List<double>();
+        for (int i = 1; i < peakCodes.Count; i++)
+        {
+            double gap = peakCodes[i] - peakCodes[i - 1];
+            if (gap > 0)
+                gaps.Add(gap);
+        }
+
+        if (gaps.Count < Math.Max(2, stateCount / 3))
+        {
+            return new LevelSpacingSuggestionInfo
+            {
+                CurrentSpacingCode = currentSpacingCode,
+                SuggestedSpacingCode = currentSpacingCode,
+                Confidence = 0,
+                ConfidenceLabel = "低",
+                Diagnostic = $"可用峰距样本不足，仅找到 {gaps.Count} 个相邻峰距。",
+                SampleCount = gaps.Count
+            };
+        }
+
+        double medianGap = Median(gaps);
+        double maxDeviation = gaps.Max(g => Math.Abs(g - medianGap));
+        double normalizedDeviation = medianGap > 0 ? maxDeviation / medianGap : 1;
+        double confidence = Math.Clamp(1 - normalizedDeviation / 0.5, 0, 1);
+        string confidenceLabel = confidence >= 0.75
+            ? "高"
+            : confidence >= 0.45
+                ? "中"
+                : "低";
+
+        double deltaFromCurrent = medianGap - currentSpacingCode;
+        string diagnostic = Math.Abs(deltaFromCurrent) <= Math.Max(2, currentSpacingCode * 0.05)
+            ? $"相邻峰距中位数 {medianGap:F2} code，与当前间距 {currentSpacingCode:F2} code 接近。"
+            : $"相邻峰距中位数 {medianGap:F2} code，与当前间距 {currentSpacingCode:F2} code 相差 {deltaFromCurrent:F2} code；当前建议只作诊断，不自动覆盖手动设置。";
+
+        return new LevelSpacingSuggestionInfo
+        {
+            CurrentSpacingCode = currentSpacingCode,
+            SuggestedSpacingCode = medianGap,
+            Confidence = confidence,
+            ConfidenceLabel = confidenceLabel,
+            Diagnostic = diagnostic,
+            SampleCount = gaps.Count,
+            MedianGapCode = medianGap,
+            MaxDeviationCode = maxDeviation
+        };
+    }
+
     private static (double X, double Y)[] BuildBoundarySidePoints(
         double boundaryCode,
         double[] voltageCodes,
@@ -443,6 +658,27 @@ public class AnalysisEngine
 
         return points
             .OrderBy(p => p.X)
+            .ToArray();
+    }
+
+    private static (double X, double Y)[] BuildMergedBoundarySidePoints(
+        List<BoundaryLevelComponent> components,
+        double[] voltageCodes)
+    {
+        var points = new Dictionary<double, double>();
+        foreach (var component in components)
+        {
+            foreach (var (x, y) in BuildBoundarySidePoints(component.BoundaryCode, voltageCodes, component.DeltaCurve))
+            {
+                points[x] = points.TryGetValue(x, out double current)
+                    ? current + y
+                    : y;
+            }
+        }
+
+        return points
+            .OrderBy(p => p.Key)
+            .Select(p => (p.Key, p.Value))
             .ToArray();
     }
 
@@ -696,6 +932,18 @@ public class AnalysisEngine
     }
 
     private static double RoundCode(double value) => Math.Round(value, 6);
+
+    private static double Median(IReadOnlyCollection<double> values)
+    {
+        if (values.Count == 0)
+            return double.NaN;
+
+        var ordered = values.OrderBy(v => v).ToArray();
+        int mid = ordered.Length / 2;
+        return ordered.Length % 2 == 1
+            ? ordered[mid]
+            : (ordered[mid - 1] + ordered[mid]) / 2.0;
+    }
 
     private static double[] SumCurves(double[] left, double[] right)
     {
@@ -1066,6 +1314,12 @@ public class BitBoundaryDistributionResult
     public int[] BoundarySourceCounts { get; init; } = Array.Empty<int>();
     public BitBoundaryDescriptor?[] Boundaries { get; init; } = Array.Empty<BitBoundaryDescriptor?>();
 }
+
+internal readonly record struct BoundaryLevelComponent(
+    int BoundaryIndex,
+    double BoundaryCode,
+    double[] DeltaCurve,
+    string DirectionLabel);
 
 public class BitBoundaryDescriptor
 {

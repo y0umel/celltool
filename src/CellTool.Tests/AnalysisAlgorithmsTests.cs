@@ -204,6 +204,30 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void BuildLevelSpacingSuggestion_UsesAdjacentPeakGapMedian()
+    {
+        StatePeakInfo[] peaks =
+        [
+            new() { StateIndex = 0, PeakCode = -90, PeakIncrementValue = 5 },
+            new() { StateIndex = 1, PeakCode = 10, PeakIncrementValue = 100 },
+            new() { StateIndex = 2, PeakCode = 96, PeakIncrementValue = 100 },
+            new() { StateIndex = 3, PeakCode = 169, PeakIncrementValue = 100 },
+            new() { StateIndex = 4, PeakCode = 257, PeakIncrementValue = 100 },
+            new() { StateIndex = 5, PeakCode = 323, PeakIncrementValue = 100 },
+            new() { StateIndex = 6, PeakCode = 414, PeakIncrementValue = 100 },
+            new() { StateIndex = 7, PeakCode = 518, PeakIncrementValue = 100 }
+        ];
+
+        var suggestion = AnalysisEngine.BuildLevelSpacingSuggestion(peaks, stateCount: 8, currentSpacingCode: 80);
+
+        Assert.NotNull(suggestion);
+        Assert.Equal(86, suggestion.SuggestedSpacingCode);
+        Assert.Equal(5, suggestion.SampleCount);
+        Assert.Equal("中", suggestion.ConfidenceLabel);
+        Assert.Contains("不自动覆盖", suggestion.Diagnostic);
+    }
+
+    [Fact]
     public void ReconstructSourceLevelDistributions_EstimatesOutOfRangeCountsFromCumulativeEdges()
     {
         int[][] rawGrayStates =
@@ -232,8 +256,8 @@ public class AnalysisAlgorithmsTests
         var integral = Assert.Single(result.Integrals, i => i.LevelIndex == 0);
         Assert.Equal(4, integral.SourceCellCount);
         Assert.Equal(1, integral.RawObservedIntegral);
-        Assert.Equal(2, integral.LeftOutOfRangeEstimate);
-        Assert.Equal(1, integral.RightOutOfRangeEstimate);
+        Assert.Equal(3, integral.LeftOutOfRangeEstimate);
+        Assert.Equal(0, integral.RightOutOfRangeEstimate);
     }
 
     [Fact]
@@ -274,8 +298,40 @@ public class AnalysisAlgorithmsTests
         Assert.Equal(80, result.Peaks[1].PeakCode);
         Assert.Equal([1], result.Curves[2]);
         Assert.Equal(160, result.Peaks[2].PeakCode);
-        Assert.Equal("source L1 read as other levels", result.Peaks[1].ObservationSources);
+        Assert.Equal("R1 L1->L0; R2 L1->L2", result.Peaks[1].ObservationSources);
         Assert.Equal(80, result.Peaks[1].AlignmentShiftMv);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_ComposesInteriorLevelFromBothAdjacentBoundaries()
+    {
+        int[][] rawGrayStates =
+        [
+            [6, 6],
+            [7, 4],
+            [7, 4]
+        ];
+        int[] sourceBaseline = [6, 6];
+        double[] voltageCodes = [-1, 0, 1];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: 3,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 2,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        Assert.Equal([0, 80], result.XValues[1]);
+        Assert.Equal([1, 1], result.Curves[1]);
+        Assert.Equal(2, result.Integrals[1].DisplayObservedIntegral);
+        Assert.Equal("R1 L1->L0; R2 L1->L2", result.Peaks[1].ObservationSources);
     }
 
     [Fact]

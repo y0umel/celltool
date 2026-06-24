@@ -81,34 +81,43 @@
                 <ColumnDefinition Width="150" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <sp:WpfPlot x:Name="LinearChartPlot"
                         Grid.Row="0"
+                        Grid.RowSpan="2"
                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
             <sp:WpfPlot x:Name="LogChartPlot"
-                        Grid.Row="1"
+                        Grid.Row="2"
                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
-            <GroupBox Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-                      Header="LOR / ROR" Margin="8,0,0,0">
-                <DataGrid ItemsSource="{Binding LimitMissStats}"
-                          AutoGenerateColumns="False"
-                          HeadersVisibility="Column"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          IsReadOnly="True"
-                          Margin="4">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="L" Binding="{Binding Label}" Width="*" />
-                        <DataGridTextColumn Header="LOR" Binding="{Binding LeftOutOfRange}" Width="*" />
-                        <DataGridTextColumn Header="ROR" Binding="{Binding RightOutOfRange}" Width="*" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </GroupBox>
+            <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Margin="8,0,0,0">
+                <GroupBox Header="L间距建议" Margin="0,0,0,8">
+                    <TextBlock Text="{Binding LevelSpacingSuggestionText}"
+                               Margin="8"
+                               TextWrapping="Wrap" />
+                </GroupBox>
+
+                <GroupBox Header="LOR / ROR">
+                    <DataGrid ItemsSource="{Binding LimitMissStats}"
+                              AutoGenerateColumns="False"
+                              HeadersVisibility="Column"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              IsReadOnly="True"
+                              Margin="4">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="L" Binding="{Binding Label}" Width="*" />
+                            <DataGridTextColumn Header="LOR" Binding="{Binding LeftOutOfRange}" Width="*" />
+                            <DataGridTextColumn Header="ROR" Binding="{Binding RightOutOfRange}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </GroupBox>
+            </StackPanel>
         </Grid>
     </Grid>
 

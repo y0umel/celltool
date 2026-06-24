@@ -38,6 +38,7 @@ public class CsvExporter
         foreach (var p in result.StatePeaks)
             AppendPeakRow(sb, p);
 
+        AppendLevelSpacingSuggestionSection(sb, result.LevelSpacingSuggestion);
         AppendDistributionIntegralSection(sb, result.DistributionIntegrals);
 
         sb.AppendLine();
@@ -79,6 +80,26 @@ public class CsvExporter
         AppendCodewordSection(sb, "零偏移CW错误", result.ZeroOffsetErrors);
 
         File.WriteAllText(filePath, sb.ToString(), CsvEncoding);
+    }
+
+    private static void AppendLevelSpacingSuggestionSection(StringBuilder sb, LevelSpacingSuggestionInfo? suggestion)
+    {
+        sb.AppendLine();
+        sb.AppendLine("L间距建议,数值");
+        if (suggestion is null)
+        {
+            sb.AppendLine("状态,未计算");
+            return;
+        }
+
+        sb.AppendLine($"当前手动间距Code,{suggestion.CurrentSpacingCode:F2}");
+        sb.AppendLine($"建议间距Code,{suggestion.SuggestedSpacingCode:F2}");
+        sb.AppendLine($"置信度,{suggestion.Confidence:P2}");
+        sb.AppendLine($"置信等级,{EscapeCsv(suggestion.ConfidenceLabel)}");
+        sb.AppendLine($"样本数,{suggestion.SampleCount}");
+        sb.AppendLine($"峰距中位数Code,{suggestion.MedianGapCode:F2}");
+        sb.AppendLine($"最大偏差Code,{suggestion.MaxDeviationCode:F2}");
+        sb.AppendLine($"诊断,{EscapeCsv(suggestion.Diagnostic)}");
     }
 
     private static void AppendDistributionIntegralSection(StringBuilder sb, DistributionIntegralInfo[] integrals)

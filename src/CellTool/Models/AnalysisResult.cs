@@ -13,10 +13,23 @@ public class AnalysisResult
     public double[] VoltageCodes { get; init; } = Array.Empty<double>();
     public double[] VoltagesMv => VoltageCodes;
     public string[] TransitionLabels { get; init; } = Array.Empty<string>();
+    public LevelSpacingSuggestionInfo? LevelSpacingSuggestion { get; init; }
     public int[] GroundTruth { get; init; } = Array.Empty<int>();
     public int TotalCells { get; init; }
     public int VoltageCount { get; init; }
     public int StateCount { get; init; }
+}
+
+public class LevelSpacingSuggestionInfo
+{
+    public double CurrentSpacingCode { get; init; }
+    public double SuggestedSpacingCode { get; init; }
+    public double Confidence { get; init; }
+    public string ConfidenceLabel { get; init; } = string.Empty;
+    public string Diagnostic { get; init; } = string.Empty;
+    public int SampleCount { get; init; }
+    public double MedianGapCode { get; init; }
+    public double MaxDeviationCode { get; init; }
 }
 
 public class DistributionIntegralInfo

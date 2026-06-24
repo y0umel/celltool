@@ -59,6 +59,9 @@ public partial class ChartConfigViewModel : ObservableObject
     [ObservableProperty]
     private bool _showLegend = true;
 
+    [ObservableProperty]
+    private string _levelSpacingSuggestionText = "未计算";
+
     public ObservableCollection<LimitMissStat> LimitMissStats { get; } = new();
 
     public event Action<Plot, Plot>? ChartUpdated;
@@ -143,6 +146,7 @@ public partial class ChartConfigViewModel : ObservableObject
         LimitMissStats.Clear();
         foreach (var stat in renderer.BuildLimitMissStats(state.LastResult))
             LimitMissStats.Add(stat);
+        LevelSpacingSuggestionText = FormatLevelSpacingSuggestion(state.LastResult.LevelSpacingSuggestion);
 
         ChartUpdated?.Invoke(linear, log);
     }
@@ -186,5 +190,13 @@ public partial class ChartConfigViewModel : ObservableObject
         {
             applyingConfig = false;
         }
+    }
+
+    private static string FormatLevelSpacingSuggestion(LevelSpacingSuggestionInfo? suggestion)
+    {
+        if (suggestion is null)
+            return "未计算";
+
+        return $"建议 {suggestion.SuggestedSpacingCode:F2} code，置信 {suggestion.ConfidenceLabel} ({suggestion.Confidence:P0})；当前 {suggestion.CurrentSpacingCode:F2} code。{suggestion.Diagnostic}";
     }
 }
