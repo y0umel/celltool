@@ -290,10 +290,8 @@ public class AnalysisEngine
         double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
         for (int level = 0; level < stateCount; level++)
         {
-            var rawDelta = SumCurves(
-                ToIncreasingDistributionDelta(levelDistributions.CumulativeCurves[level]),
-                ToDecreasingDistributionDelta(levelDistributions.CumulativeCurves[level]));
-            var delta = KeepDominantWindow(rawDelta, minValue: 3, maxGap: 3, padding: 2);
+            var rawDelta = ToEnvelopeDistributionDelta(levelDistributions.CumulativeCurves[level]);
+            var delta = rawDelta;
             double levelPositionCode = LevelPositionCode(level, stateCount, spacingCode);
             var points = BuildBoundarySidePoints(levelPositionCode, displayVoltageCodes, delta);
 
@@ -428,193 +426,6 @@ public class AnalysisEngine
         return level * spacingCode;
     }
 
-    private static double[] KeepDominantWindow(double[] curve, double minValue, int maxGap, int padding)
-    {
-        var windows = new List<(int Start, int End, double Sum, double Peak)>();
-        int start = -1;
-        int end = -1;
-        int gap = 0;
-        double sum = 0;
-        double peak = 0;
-
-        for (int i = 0; i < curve.Length; i++)
-        {
-            if (curve[i] >= minValue)
-            {
-                if (start < 0)
-                    start = i;
-                end = i;
-                gap = 0;
-                sum += curve[i];
-                peak = Math.Max(peak, curve[i]);
-                continue;
-            }
-
-            if (start >= 0)
-            {
-                gap++;
-                if (gap > maxGap)
-                {
-                    windows.Add((start, end, sum, peak));
-                    start = -1;
-                    end = -1;
-                    gap = 0;
-                    sum = 0;
-                    peak = 0;
-                }
-            }
-        }
-
-        if (start >= 0)
-            windows.Add((start, end, sum, peak));
-
-        if (windows.Count == 0)
-            return curve;
-
-        var best = windows
-            .OrderByDescending(w => w.Peak)
-            .ThenByDescending(w => w.Sum)
-            .First();
-        int keepStart = Math.Max(0, best.Start - padding);
-        int keepEnd = Math.Min(curve.Length - 1, best.End + padding);
-        var filtered = new double[curve.Length];
-        for (int i = keepStart; i <= keepEnd; i++)
-            filtered[i] = curve[i];
-
-        return filtered;
-    }
-
-    private static SourceLevelDistributionResult ReconstructBoundarySideDistributions(
-        int[][] rawGrayPerVoltage,
-        int[] sourceRawGrayStates,
-        double[] voltageCodes,
-        int voltageCount,
-        GroupModel groupModel,
-        IReadOnlyDictionary<int, int[]> modeEncodings,
-        int wlCount,
-        int cellCount,
-        int stateCount,
-        double levelSpacingMv,
-        string grayCodeOrder = "U-M-L")
-    {
-        var bitDistributions = ComputeSingleBitBoundaryDistributions(
-            rawGrayPerVoltage,
-            sourceRawGrayStates,
-            voltageCount,
-            groupModel,
-            modeEncodings,
-            wlCount,
-            cellCount,
-            stateCount,
-            grayCodeOrder);
-
-        int boundaryCount = Math.Max(0, stateCount - 1);
-        int sideCurveCount = boundaryCount * 2;
-        var labels = Enumerable.Range(0, sideCurveCount)
-            .Select(i => BuildBoundarySideLabel(i / 2, i % 2 == 0))
-            .ToArray();
-        var curves = new double[sideCurveCount][];
-        var xValues = new double[sideCurveCount][];
-        var peaks = new StatePeakInfo[sideCurveCount];
-
-        var leftDeltas = BuildBoundarySideDeltas(
-            bitDistributions.LeftToRightCurves,
-            bitDistributions.Boundaries,
-            isLeftToRightSide: true);
-        var rightDeltas = BuildBoundarySideDeltas(
-            bitDistributions.RightToLeftCurves,
-            bitDistributions.Boundaries,
-            isLeftToRightSide: false);
-        var displayVoltageCodes = NormalizeVoltageCodes(voltageCodes);
-        var boundaryPositions = BuildReadBoundaryPositionsCode(levelSpacingMv, stateCount);
-
-        for (int boundary = 0; boundary < boundaryCount; boundary++)
-        {
-            double boundaryPositionCode = boundary < boundaryPositions.Length ? boundaryPositions[boundary] : 0;
-            int leftCurve = boundary * 2;
-            int rightCurve = leftCurve + 1;
-
-            BuildBoundarySideCurve(
-                leftCurve,
-                boundary,
-                isLeftSide: true,
-                leftDeltas,
-                displayVoltageCodes,
-                boundaryPositionCode,
-                labels,
-                curves,
-                xValues,
-                peaks,
-                bitDistributions);
-
-            BuildBoundarySideCurve(
-                rightCurve,
-                boundary,
-                isLeftSide: false,
-                rightDeltas,
-                displayVoltageCodes,
-                boundaryPositionCode,
-                labels,
-                curves,
-                xValues,
-                peaks,
-                bitDistributions);
-        }
-
-        return new SourceLevelDistributionResult
-        {
-            Curves = curves,
-            XValues = xValues,
-            Labels = labels,
-            Peaks = peaks,
-            SourceCounts = bitDistributions.SourceCounts,
-            Integrals = Array.Empty<DistributionIntegralInfo>(),
-            Diagnostics = BuildBitBoundaryDiagnostics(
-                bitDistributions.Boundaries,
-                bitDistributions.CumulativeCurves,
-                leftDeltas,
-                rightDeltas,
-                bitDistributions.BoundarySourceCounts,
-                displayVoltageCodes,
-                boundaryPositions)
-        };
-    }
-
-    private static void BuildBoundarySideCurve(
-        int curveIndex,
-        int boundary,
-        bool isLeftSide,
-        double[][] sideDeltas,
-        double[] voltageCodes,
-        double boundaryPositionCode,
-        string[] labels,
-        double[][] curves,
-        double[][] xValues,
-        StatePeakInfo[] peaks,
-        BitBoundaryDistributionResult bitDistributions)
-    {
-        var delta = boundary < sideDeltas.Length ? sideDeltas[boundary] : Array.Empty<double>();
-        var points = BuildBoundarySidePoints(boundaryPositionCode, voltageCodes, delta);
-
-        xValues[curveIndex] = points.Select(p => p.X).ToArray();
-        curves[curveIndex] = points.Select(p => p.Y).ToArray();
-
-        int peakIndex = FindPeakIndex(curves[curveIndex]);
-        peaks[curveIndex] = new StatePeakInfo
-        {
-            StateIndex = curveIndex,
-            Label = labels[curveIndex],
-            PeakCode = peakIndex >= 0 ? xValues[curveIndex][peakIndex] : 0,
-            LeftBoundaryCode = xValues[curveIndex].Length > 0 ? xValues[curveIndex][0] : null,
-            RightBoundaryCode = xValues[curveIndex].Length > 0 ? xValues[curveIndex][^1] : null,
-            TotalCellCount = boundary < bitDistributions.BoundarySourceCounts.Length ? bitDistributions.BoundarySourceCounts[boundary] : 0,
-            PeakIncrementValue = peakIndex >= 0 ? curves[curveIndex][peakIndex] : 0,
-            AlignmentShiftMv = boundaryPositionCode,
-            AlignmentScore = null,
-            ObservationSources = BoundarySideObservationSourceLabel(boundary, isLeftSide, bitDistributions.Boundaries)
-        };
-    }
-
     private static (double X, double Y)[] BuildBoundarySidePoints(
         double boundaryCode,
         double[] voltageCodes,
@@ -633,37 +444,6 @@ public class AnalysisEngine
         return points
             .OrderBy(p => p.X)
             .ToArray();
-    }
-
-    private static string BuildBoundarySideLabel(int boundary, bool isLeftSide) =>
-        $"L{boundary + 1}-{(isLeftSide ? "left" : "right")}";
-
-    private static double[] NormalizeVoltageCodes(double[] voltageCodes)
-    {
-        if (voltageCodes.Length == 0)
-            return Array.Empty<double>();
-
-        double minCode = voltageCodes.Min();
-        return voltageCodes
-            .Select(code => RoundCode(code - minCode))
-            .ToArray();
-    }
-
-    private static double[][] BuildBoundarySideDeltas(
-        double[][] cumulativeCurves,
-        BitBoundaryDescriptor?[] boundaries,
-        bool isLeftToRightSide)
-    {
-        var deltas = new double[cumulativeCurves.Length][];
-        for (int boundary = 0; boundary < cumulativeCurves.Length; boundary++)
-        {
-            var curve = cumulativeCurves[boundary];
-            deltas[boundary] = isLeftToRightSide
-                ? ToIncreasingDistributionDelta(curve)
-                : ToDecreasingDistributionDelta(curve);
-        }
-
-        return deltas;
     }
 
     public static BitBoundaryDistributionResult ComputeSingleBitBoundaryDistributions(
@@ -869,18 +649,10 @@ public class AnalysisEngine
         return delta;
     }
 
-    private static double[] BuildReadBoundaryPositionsCode(double levelSpacingCode, int stateCount)
-    {
-        if (stateCount <= 1)
-            return Array.Empty<double>();
-
-        double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingCode, stateCount));
-        var positions = new double[stateCount - 1];
-        for (int i = 1; i < positions.Length; i++)
-            positions[i] = i * spacingCode;
-
-        return positions;
-    }
+    public static double[] ToEnvelopeDistributionDelta(double[] cumulativeCurve) =>
+        SumCurves(
+            ToIncreasingDistributionDelta(cumulativeCurve),
+            ToDecreasingDistributionDelta(cumulativeCurve));
 
     public static double DefaultLevelSpacingCode(int stateCount) => stateCount switch
     {
@@ -924,72 +696,6 @@ public class AnalysisEngine
     }
 
     private static double RoundCode(double value) => Math.Round(value, 6);
-
-    private static string BoundarySideObservationSourceLabel(int boundary, bool isLeftSide, BitBoundaryDescriptor?[] boundaries)
-    {
-        if (boundary >= 0 && boundary < boundaries.Length && boundaries[boundary] is { } descriptor)
-        {
-            string side = isLeftSide ? "left" : "right";
-            return $"L{boundary + 1}-{side} {descriptor.PageName} {descriptor.Direction} {descriptor.ContextLabel}";
-        }
-
-        return BuildBoundarySideLabel(boundary, isLeftSide);
-    }
-
-    private static ErrorTypeDiagnosticInfo[] BuildBitBoundaryDiagnostics(
-        BitBoundaryDescriptor?[] boundaries,
-        double[][] cumulativeCurves,
-        double[][] leftDeltas,
-        double[][] rightDeltas,
-        int[] sourceCounts,
-        double[] voltageCodes,
-        double[] boundaryPositions)
-    {
-        var diagnostics = new List<ErrorTypeDiagnosticInfo>();
-
-        for (int boundary = 0; boundary < boundaries.Length; boundary++)
-        {
-            var descriptor = boundaries[boundary];
-            var cumulative = boundary < cumulativeCurves.Length ? cumulativeCurves[boundary] : Array.Empty<double>();
-            var leftDelta = boundary < leftDeltas.Length ? leftDeltas[boundary] : Array.Empty<double>();
-            var rightDelta = boundary < rightDeltas.Length ? rightDeltas[boundary] : Array.Empty<double>();
-            var delta = SumCurves(leftDelta, rightDelta);
-            int peakIndex = FindPeakIndex(cumulative);
-            int deltaPeakIndex = FindPeakIndex(delta);
-            double peakCount = peakIndex >= 0 ? cumulative[peakIndex] : 0;
-            double deltaPeakCount = deltaPeakIndex >= 0 ? delta[deltaPeakIndex] : 0;
-            int sourceCount = boundary < sourceCounts.Length ? sourceCounts[boundary] : 0;
-
-            diagnostics.Add(new ErrorTypeDiagnosticInfo
-            {
-                SourceLevel = descriptor?.LeftLevel ?? boundary,
-                CurrentLevel = descriptor?.RightLevel ?? boundary + 1,
-                IsAdjacent = descriptor?.IsValid == true,
-                PeakOffsetMv = peakIndex >= 0 && peakIndex < voltageCodes.Length ? voltageCodes[peakIndex] : 0,
-                PeakCellCount = peakCount,
-                DeltaPeakOffsetMv = deltaPeakIndex >= 0 && deltaPeakIndex < voltageCodes.Length
-                    ? voltageCodes[deltaPeakIndex]
-                    : 0,
-                DeltaPeakCellCount = deltaPeakCount,
-                ReadBoundaryMv = boundary < boundaryPositions.Length ? boundaryPositions[boundary] : double.NaN,
-                PeakSourceRatio = sourceCount > 0 ? peakCount / sourceCount : 0,
-                BoundaryIndex = boundary,
-                BoundaryLabel = $"R{boundary + 1}",
-                TargetLevel = boundary + 1,
-                PageName = descriptor?.PageName ?? string.Empty,
-                BitDirection = descriptor?.Direction ?? string.Empty,
-                ContextLabel = descriptor?.ContextLabel ?? string.Empty,
-                LeftRawGray = descriptor?.LeftRawGray ?? -1,
-                RightRawGray = descriptor?.RightRawGray ?? -1,
-                IsValidBoundary = descriptor?.IsValid == true,
-                Note = descriptor?.InvalidReason ?? string.Empty
-            });
-        }
-
-        return diagnostics
-            .OrderBy(d => d.BoundaryIndex)
-            .ToArray();
-    }
 
     private static double[] SumCurves(double[] left, double[] right)
     {

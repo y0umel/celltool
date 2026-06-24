@@ -154,7 +154,7 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
-    public void ReconstructSourceLevelDistributions_RecordsRawIntegralBeforeDisplayClipping()
+    public void ReconstructSourceLevelDistributions_UsesFullRawIntegralForDisplay()
     {
         int[][] rawGrayStates =
         [
@@ -189,8 +189,18 @@ public class AnalysisAlgorithmsTests
         var integral = Assert.Single(result.Integrals, i => i.LevelIndex == 0);
         Assert.Equal(8, integral.SourceCellCount);
         Assert.Equal(8, integral.RawObservedIntegral);
-        Assert.Equal(4, integral.DisplayObservedIntegral);
-        Assert.Equal(4, integral.ClippedIntegral);
+        Assert.Equal(8, integral.DisplayObservedIntegral);
+        Assert.Equal(0, integral.ClippedIntegral);
+    }
+
+    [Fact]
+    public void ToEnvelopeDistributionDelta_UsesMonotonicEnvelopeFromScanEdges()
+    {
+        double[] cumulative = [8, 5, 2, 0, 0, 3, 6, 8];
+
+        var delta = AnalysisEngine.ToEnvelopeDistributionDelta(cumulative);
+
+        Assert.Equal([0, 3, 3, 2, 0, 0, 0, 0], delta);
     }
 
     [Fact]
@@ -299,6 +309,45 @@ public class AnalysisAlgorithmsTests
         Assert.Equal([0], result.XValues[0]);
         Assert.Equal(80, result.Peaks[1].PeakCode);
         Assert.Equal(160, result.Peaks[2].PeakCode);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_KeepsSeparatedPeaksInOneLevelCurve()
+    {
+        int[][] rawGrayStates =
+        [
+            BuildSlcReadFromChangedRanges(0, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 4),
+            BuildSlcReadFromChangedRanges(4, 4)
+        ];
+        int[] sourceBaseline = new int[8];
+        double[] voltageCodes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        var groupModel = OneSlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: sourceBaseline.Length,
+            stateCount: 2,
+            levelSpacingMv: 0);
+
+        Assert.Equal([4, 4], result.Curves[0]);
+        Assert.Equal([1, 8], result.XValues[0]);
+        var integral = Assert.Single(result.Integrals, i => i.LevelIndex == 0);
+        Assert.Equal(8, integral.DisplayObservedIntegral);
     }
 
     [Fact]
@@ -441,4 +490,5 @@ public class AnalysisAlgorithmsTests
 
         return values;
     }
+
 }

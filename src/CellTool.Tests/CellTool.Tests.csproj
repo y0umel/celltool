@@ -13,6 +13,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
     <PackageReference Include="EPPlus" Version="7.*" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
+    <PackageReference Include="ScottPlot" Version="5.*" />
+    <PackageReference Include="SkiaSharp" Version="3.*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,13 +25,16 @@
     <Compile Include="../CellTool/Models/ChipInfo.cs" Link="CellTool/Models/ChipInfo.cs" />
     <Compile Include="../CellTool/Models/CodewordErrorStat.cs" Link="CellTool/Models/CodewordErrorStat.cs" />
     <Compile Include="../CellTool/Models/GroupModel.cs" Link="CellTool/Models/GroupModel.cs" />
+    <Compile Include="../CellTool/Models/LimitMissStat.cs" Link="CellTool/Models/LimitMissStat.cs" />
     <Compile Include="../CellTool/Models/StatePeakInfo.cs" Link="CellTool/Models/StatePeakInfo.cs" />
     <Compile Include="../CellTool/Models/VoltageFileInfo.cs" Link="CellTool/Models/VoltageFileInfo.cs" />
     <Compile Include="../CellTool/Services/AnalysisEngine.cs" Link="CellTool/Services/AnalysisEngine.cs" />
     <Compile Include="../CellTool/Services/AppPaths.cs" Link="CellTool/Services/AppPaths.cs" />
     <Compile Include="../CellTool/Services/ChartAxisMapper.cs" Link="CellTool/Services/ChartAxisMapper.cs" />
+    <Compile Include="../CellTool/Services/ChartRenderer.cs" Link="CellTool/Services/ChartRenderer.cs" />
     <Compile Include="../CellTool/Services/ChipDatabaseService.cs" Link="CellTool/Services/ChipDatabaseService.cs" />
     <Compile Include="../CellTool/Services/CodewordAnalyzer.cs" Link="CellTool/Services/CodewordAnalyzer.cs" />
+    <Compile Include="../CellTool/Services/CsvExporter.cs" Link="CellTool/Services/CsvExporter.cs" />
     <Compile Include="../CellTool/Services/ExcelParser.cs" Link="CellTool/Services/ExcelParser.cs" />
     <Compile Include="../CellTool/Services/GrayCodeDecoder.cs" Link="CellTool/Services/GrayCodeDecoder.cs" />
     <Compile Include="../CellTool/Services/GroupModelParser.cs" Link="CellTool/Services/GroupModelParser.cs" />
