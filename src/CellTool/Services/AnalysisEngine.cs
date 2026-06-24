@@ -146,6 +146,7 @@ public class AnalysisEngine
             ZeroOffsetErrors = zeroErrors,
             IncrementCurves = increments,
             IncrementCurveXValues = curveXValues,
+            DistributionIntegrals = reconstructed.Integrals,
             ErrorTypeDiagnostics = reconstructed.Diagnostics,
             VoltageCodes = voltageCodes,
             TransitionLabels = transitionLabels,
@@ -284,14 +285,15 @@ public class AnalysisEngine
         var curves = new double[stateCount][];
         var xValues = new double[stateCount][];
         var peaks = new StatePeakInfo[stateCount];
+        var integrals = new DistributionIntegralInfo[stateCount];
 
         double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
         for (int level = 0; level < stateCount; level++)
         {
-            var delta = SumCurves(
+            var rawDelta = SumCurves(
                 ToIncreasingDistributionDelta(levelDistributions.CumulativeCurves[level]),
                 ToDecreasingDistributionDelta(levelDistributions.CumulativeCurves[level]));
-            delta = KeepDominantWindow(delta, minValue: 3, maxGap: 3, padding: 2);
+            var delta = KeepDominantWindow(rawDelta, minValue: 3, maxGap: 3, padding: 2);
             double levelPositionCode = LevelPositionCode(level, stateCount, spacingCode);
             var points = BuildBoundarySidePoints(levelPositionCode, displayVoltageCodes, delta);
 
@@ -312,6 +314,14 @@ public class AnalysisEngine
                 AlignmentScore = null,
                 ObservationSources = $"source L{level} read as other levels"
             };
+
+            integrals[level] = BuildDistributionIntegralInfo(
+                level,
+                labels[level],
+                levelDistributions.SourceCounts,
+                levelDistributions.CumulativeCurves[level],
+                rawDelta,
+                delta);
         }
 
         return new SourceLevelDistributionResult
@@ -321,7 +331,36 @@ public class AnalysisEngine
             Labels = labels,
             Peaks = peaks,
             SourceCounts = levelDistributions.SourceCounts,
+            Integrals = integrals,
             Diagnostics = Array.Empty<ErrorTypeDiagnosticInfo>()
+        };
+    }
+
+    private static DistributionIntegralInfo BuildDistributionIntegralInfo(
+        int level,
+        string label,
+        int[] sourceCounts,
+        double[] cumulativeCurve,
+        double[] rawDelta,
+        double[] displayDelta)
+    {
+        int sourceCount = level < sourceCounts.Length ? sourceCounts[level] : 0;
+        double rawObserved = rawDelta.Sum();
+        double displayObserved = displayDelta.Sum();
+        double leftOutOfRange = cumulativeCurve.Length > 0 ? cumulativeCurve[0] : 0;
+        double rightOutOfRange = cumulativeCurve.Length > 0
+            ? Math.Max(0, sourceCount - cumulativeCurve[^1])
+            : sourceCount;
+
+        return new DistributionIntegralInfo
+        {
+            LevelIndex = level,
+            Label = label,
+            SourceCellCount = sourceCount,
+            RawObservedIntegral = rawObserved,
+            DisplayObservedIntegral = displayObserved,
+            LeftOutOfRangeEstimate = leftOutOfRange,
+            RightOutOfRangeEstimate = rightOutOfRange
         };
     }
 
@@ -529,6 +568,7 @@ public class AnalysisEngine
             Labels = labels,
             Peaks = peaks,
             SourceCounts = bitDistributions.SourceCounts,
+            Integrals = Array.Empty<DistributionIntegralInfo>(),
             Diagnostics = BuildBitBoundaryDiagnostics(
                 bitDistributions.Boundaries,
                 bitDistributions.CumulativeCurves,
@@ -1301,6 +1341,7 @@ public class SourceLevelDistributionResult
     public string[] Labels { get; init; } = Array.Empty<string>();
     public StatePeakInfo[] Peaks { get; init; } = Array.Empty<StatePeakInfo>();
     public int[] SourceCounts { get; init; } = Array.Empty<int>();
+    public DistributionIntegralInfo[] Integrals { get; init; } = Array.Empty<DistributionIntegralInfo>();
     public ErrorTypeDiagnosticInfo[] Diagnostics { get; init; } = Array.Empty<ErrorTypeDiagnosticInfo>();
 }
 

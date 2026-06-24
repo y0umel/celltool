@@ -38,6 +38,8 @@ public class CsvExporter
         foreach (var p in result.StatePeaks)
             AppendPeakRow(sb, p);
 
+        AppendDistributionIntegralSection(sb, result.DistributionIntegrals);
+
         sb.AppendLine();
         sb.AppendLine("边界,目标Level,页位,位翻转方向,上下文,左RawGray,右RawGray,是否有效,读取边界Code,累计峰偏移Code,累计峰Cell数,增量峰偏移Code,增量峰Cell数,峰值源占比,备注");
         if (result.ErrorTypeDiagnostics.Length == 0)
@@ -77,6 +79,31 @@ public class CsvExporter
         AppendCodewordSection(sb, "零偏移CW错误", result.ZeroOffsetErrors);
 
         File.WriteAllText(filePath, sb.ToString(), CsvEncoding);
+    }
+
+    private static void AppendDistributionIntegralSection(StringBuilder sb, DistributionIntegralInfo[] integrals)
+    {
+        sb.AppendLine();
+        sb.AppendLine("Level,源Cell数,未裁剪观测积分,显示曲线积分,裁剪损失,左侧未扫到估计,右侧未扫到估计,未裁剪积分差,显示积分差");
+        if (integrals.Length == 0)
+        {
+            sb.AppendLine("未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算");
+            return;
+        }
+
+        foreach (var item in integrals.OrderBy(i => i.LevelIndex))
+        {
+            sb.AppendLine(
+                $"{EscapeCsv(item.Label)}," +
+                $"{item.SourceCellCount}," +
+                $"{item.RawObservedIntegral:F2}," +
+                $"{item.DisplayObservedIntegral:F2}," +
+                $"{item.ClippedIntegral:F2}," +
+                $"{item.LeftOutOfRangeEstimate:F2}," +
+                $"{item.RightOutOfRangeEstimate:F2}," +
+                $"{item.RawIntegralDeltaFromSource:F2}," +
+                $"{item.DisplayIntegralDeltaFromSource:F2}");
+        }
     }
 
     public void ExportBestVoltages(

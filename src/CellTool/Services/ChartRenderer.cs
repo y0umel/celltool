@@ -38,14 +38,22 @@ public class ChartRenderer
         for (int i = 0; i < result.StateCount; i++)
         {
             string label = i < result.TransitionLabels.Length ? result.TransitionLabels[i] : $"L{i}";
-            int total = result.StatePeaks.FirstOrDefault(p => p.StateIndex == i)?.TotalCellCount ?? 0;
-            double observed = i < result.IncrementCurves.Length ? result.IncrementCurves[i].Sum() : 0;
+            var integral = result.DistributionIntegrals.FirstOrDefault(x => x.LevelIndex == i);
+            int total = integral?.SourceCellCount
+                        ?? result.StatePeaks.FirstOrDefault(p => p.StateIndex == i)?.TotalCellCount
+                        ?? 0;
+            double observed = integral?.RawObservedIntegral
+                              ?? (i < result.IncrementCurves.Length ? result.IncrementCurves[i].Sum() : 0);
             int missing = Math.Max(0, total - (int)Math.Round(observed));
             stats.Add(new LimitMissStat
             {
                 Label = label,
-                LeftOutOfRange = i == 0 ? missing : 0,
-                RightOutOfRange = i == result.StateCount - 1 ? missing : 0
+                LeftOutOfRange = integral is not null
+                    ? (int)Math.Round(integral.LeftOutOfRangeEstimate)
+                    : (i == 0 ? missing : 0),
+                RightOutOfRange = integral is not null
+                    ? (int)Math.Round(integral.RightOutOfRangeEstimate)
+                    : (i == result.StateCount - 1 ? missing : 0)
             });
         }
 

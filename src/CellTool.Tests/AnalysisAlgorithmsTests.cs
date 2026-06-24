@@ -154,6 +154,79 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void ReconstructSourceLevelDistributions_RecordsRawIntegralBeforeDisplayClipping()
+    {
+        int[][] rawGrayStates =
+        [
+            BuildSlcReadFromChangedRanges(0, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 0),
+            BuildSlcReadFromChangedRanges(4, 4),
+            BuildSlcReadFromChangedRanges(4, 4)
+        ];
+        int[] sourceBaseline = new int[8];
+        double[] voltageCodes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        var groupModel = OneSlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 8,
+            stateCount: 2,
+            levelSpacingMv: 0);
+
+        var integral = Assert.Single(result.Integrals, i => i.LevelIndex == 0);
+        Assert.Equal(8, integral.SourceCellCount);
+        Assert.Equal(8, integral.RawObservedIntegral);
+        Assert.Equal(4, integral.DisplayObservedIntegral);
+        Assert.Equal(4, integral.ClippedIntegral);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_EstimatesOutOfRangeCountsFromCumulativeEdges()
+    {
+        int[][] rawGrayStates =
+        [
+            BuildSlcRead(2),
+            BuildSlcRead(3),
+            BuildSlcRead(3)
+        ];
+        int[] sourceBaseline = new int[4];
+        double[] voltageCodes = [0, 1, 2];
+        var groupModel = OneSlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 4,
+            stateCount: 2,
+            levelSpacingMv: 0);
+
+        var integral = Assert.Single(result.Integrals, i => i.LevelIndex == 0);
+        Assert.Equal(4, integral.SourceCellCount);
+        Assert.Equal(1, integral.RawObservedIntegral);
+        Assert.Equal(2, integral.LeftOutOfRangeEstimate);
+        Assert.Equal(1, integral.RightOutOfRangeEstimate);
+    }
+
+    [Fact]
     public void ReconstructSourceLevelDistributions_OutputsPhysicalLevelCurves()
     {
         int[][] rawGrayStates =
@@ -354,6 +427,17 @@ public class AnalysisAlgorithmsTests
         var values = new int[4000];
         for (int i = 0; i < oneCount; i++)
             values[i] = 1;
+
+        return values;
+    }
+
+    private static int[] BuildSlcReadFromChangedRanges(int firstRangeCount, int secondRangeCount)
+    {
+        var values = new int[8];
+        for (int i = 0; i < firstRangeCount && i < 4; i++)
+            values[i] = 1;
+        for (int i = 0; i < secondRangeCount && i < 4; i++)
+            values[i + 4] = 1;
 
         return values;
     }

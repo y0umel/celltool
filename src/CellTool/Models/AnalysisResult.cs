@@ -8,6 +8,7 @@ public class AnalysisResult
     public CodewordErrorStat? ZeroOffsetErrors { get; init; }
     public double[][] IncrementCurves { get; init; } = Array.Empty<double[]>();
     public double[][] IncrementCurveXValues { get; init; } = Array.Empty<double[]>();
+    public DistributionIntegralInfo[] DistributionIntegrals { get; init; } = Array.Empty<DistributionIntegralInfo>();
     public ErrorTypeDiagnosticInfo[] ErrorTypeDiagnostics { get; init; } = Array.Empty<ErrorTypeDiagnosticInfo>();
     public double[] VoltageCodes { get; init; } = Array.Empty<double>();
     public double[] VoltagesMv => VoltageCodes;
@@ -16,6 +17,20 @@ public class AnalysisResult
     public int TotalCells { get; init; }
     public int VoltageCount { get; init; }
     public int StateCount { get; init; }
+}
+
+public class DistributionIntegralInfo
+{
+    public int LevelIndex { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public int SourceCellCount { get; init; }
+    public double RawObservedIntegral { get; init; }
+    public double DisplayObservedIntegral { get; init; }
+    public double LeftOutOfRangeEstimate { get; init; }
+    public double RightOutOfRangeEstimate { get; init; }
+    public double ClippedIntegral => Math.Max(0, RawObservedIntegral - DisplayObservedIntegral);
+    public double RawIntegralDeltaFromSource => RawObservedIntegral - SourceCellCount;
+    public double DisplayIntegralDeltaFromSource => DisplayObservedIntegral - SourceCellCount;
 }
 
 public class ErrorTypeDiagnosticInfo
