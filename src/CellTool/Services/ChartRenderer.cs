@@ -95,8 +95,8 @@ public class ChartRenderer
         ConfigureToolStylePlot(log, string.Empty, $"Log {chartConfig.YAxisLabel}", logScale: true);
         AddCurveSeries(linear, result, logScale: false);
         AddCurveSeries(log, result, logScale: true);
-        AddMarkersAndLegend(linear, result, chartConfig, Alignment.UpperRight);
-        AddMarkersAndLegend(log, result, chartConfig, Alignment.LowerRight);
+        AddMarkersAndLegend(linear, result, chartConfig);
+        AddMarkersAndLegend(log, result, chartConfig);
         ApplyToolStyleLimits(linear, result, chartConfig, logScale: false);
         ApplyToolStyleLimits(log, result, chartConfig, logScale: true);
         mp.SavePng(filePath, width, height);
@@ -112,7 +112,7 @@ public class ChartRenderer
             logScale ? $"Log {chartConfig.YAxisLabel}" : chartConfig.YAxisLabel,
             logScale);
         AddCurveSeries(plot, result, logScale);
-        AddMarkersAndLegend(plot, result, chartConfig, logScale ? Alignment.LowerRight : Alignment.UpperRight);
+        AddMarkersAndLegend(plot, result, chartConfig);
         return plot;
     }
 
@@ -141,8 +141,7 @@ public class ChartRenderer
     private static void AddMarkersAndLegend(
         Plot plot,
         AnalysisResult result,
-        ChartConfig chartConfig,
-        Alignment legendAlignment)
+        ChartConfig chartConfig)
     {
         if (chartConfig.ShowBoundaryLines)
             AddReadValleyLines(plot, result);
@@ -163,7 +162,7 @@ public class ChartRenderer
         }
 
         if (chartConfig.ShowLegend)
-            plot.ShowLegend(legendAlignment);
+            plot.ShowLegend(Edge.Right);
     }
 
     private static void ConfigureToolStylePlot(Plot plot, string title, string yLabel, bool logScale)

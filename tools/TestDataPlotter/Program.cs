@@ -273,7 +273,8 @@ static void RenderToolStyle(
             $"R{valley.BoundaryIndex + 1}: x={valley.X:F0}, cells={valley.ErrorCount:F1}, threshold={valley.Threshold:F1}");
     }
 
-    linear.ShowLegend(Alignment.UpperRight);
+    linear.ShowLegend(Edge.Right);
+    log.ShowLegend(Edge.Right);
     linear.Axes.SetLimits(-128, 640, -70, 1100);
     log.Axes.SetLimits(-128, 640, -0.05, 3.2);
 
