@@ -93,8 +93,8 @@ public class ChartRenderer
         var log = mp.GetPlot(1);
         ConfigureToolStylePlot(linear, chartConfig.Title, chartConfig.YAxisLabel, logScale: false);
         ConfigureToolStylePlot(log, string.Empty, $"Log {chartConfig.YAxisLabel}", logScale: true);
-        AddCurveSeries(linear, result, logScale: false);
-        AddCurveSeries(log, result, logScale: true);
+        AddCurveSeries(linear, result, chartConfig, logScale: false);
+        AddCurveSeries(log, result, chartConfig, logScale: true);
         AddMarkersAndLegend(linear, result, chartConfig);
         AddMarkersAndLegend(log, result, chartConfig);
         ApplyToolStyleLimits(linear, result, chartConfig, logScale: false);
@@ -111,12 +111,12 @@ public class ChartRenderer
             logScale ? string.Empty : chartConfig.Title,
             logScale ? $"Log {chartConfig.YAxisLabel}" : chartConfig.YAxisLabel,
             logScale);
-        AddCurveSeries(plot, result, logScale);
+        AddCurveSeries(plot, result, chartConfig, logScale);
         AddMarkersAndLegend(plot, result, chartConfig);
         return plot;
     }
 
-    private static void AddCurveSeries(Plot plot, AnalysisResult result, bool logScale)
+    private static void AddCurveSeries(Plot plot, AnalysisResult result, ChartConfig chartConfig, bool logScale)
     {
         for (int s = 0; s < result.IncrementCurves.Length; s++)
         {
@@ -127,11 +127,12 @@ public class ChartRenderer
 
             var color = Color.FromHex(s < DefaultColors.Length ? DefaultColors[s] : DefaultColors[^1]);
             string label = s < result.TransitionLabels.Length ? result.TransitionLabels[s] : $"L{s}";
+            var display = BuildDisplayCurve(curveX, curve, chartConfig);
             var ys = logScale
-                ? curve.Select(y => Math.Log10(Math.Max(1, y))).ToArray()
-                : curve;
+                ? BuildLogDisplayY(display.Y)
+                : display.Y;
             bool legendAdded = false;
-            foreach (var segment in SplitSegments(curveX, ys))
+            foreach (var segment in SplitSegments(display.X, ys))
             {
                 var scatter = plot.Add.Scatter(segment.X, segment.Y);
                 scatter.Color = color;
@@ -144,6 +145,101 @@ public class ChartRenderer
                 }
             }
         }
+    }
+
+    internal static (double[] X, double[] Y) BuildDisplayCurve(double[] xs, double[] ys, ChartConfig chartConfig)
+    {
+        int count = Math.Min(xs.Length, ys.Length);
+        if (count == 0)
+            return (Array.Empty<double>(), Array.Empty<double>());
+
+        var ordered = Enumerable.Range(0, count)
+            .Select(i => (X: xs[i], Y: ys[i]))
+            .OrderBy(p => p.X)
+            .ToArray();
+        var orderedX = ordered.Select(p => p.X).ToArray();
+        var orderedY = ordered.Select(p => p.Y).ToArray();
+
+        if (!chartConfig.UseSavitzkyGolaySmoothing)
+            return (orderedX, orderedY);
+
+        int window = NormalizeSavitzkyGolayWindow(chartConfig.SavitzkyGolayWindow);
+        var outputX = new List<double>();
+        var outputY = new List<double>();
+        var segments = SplitSegments(orderedX, orderedY).ToArray();
+        double typicalStep = Math.Max(1, Math.Round(EstimateTypicalStep(orderedX)));
+        for (int i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            var smoothed = ApplySavitzkyGolayQuadratic(segment.Y, window);
+            if (i > 0 && segment.X.Length > 0)
+            {
+                outputX.Add(Math.Round(segment.X[0] - typicalStep, 6));
+                outputY.Add(0);
+            }
+
+            outputX.AddRange(segment.X);
+            outputY.AddRange(smoothed.Select(y => Math.Max(0, y)));
+            if (i < segments.Length - 1 && segment.X.Length > 0)
+            {
+                outputX.Add(Math.Round(segment.X[^1] + typicalStep, 6));
+                outputY.Add(0);
+            }
+        }
+
+        return (outputX.ToArray(), outputY.ToArray());
+    }
+
+    internal static double[] ApplySavitzkyGolayQuadratic(double[] values, int window)
+    {
+        window = NormalizeSavitzkyGolayWindow(window);
+        if (values.Length < window)
+            return values.ToArray();
+
+        int radius = window / 2;
+        var result = new double[values.Length];
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (i < radius || i >= values.Length - radius)
+            {
+                result[i] = values[i];
+                continue;
+            }
+
+            double sum = 0;
+            for (int k = -radius; k <= radius; k++)
+                sum += SavitzkyGolayQuadraticCoefficient(k, radius) * values[i + k];
+
+            result[i] = sum;
+        }
+
+        return result;
+    }
+
+    internal static double[] BuildLogDisplayY(double[] values)
+    {
+        var result = new double[values.Length];
+        for (int i = 0; i < values.Length; i++)
+            result[i] = Math.Max(0, Math.Log10(Math.Max(1, values[i])));
+
+        return result;
+    }
+
+    private static int NormalizeSavitzkyGolayWindow(int window)
+    {
+        if (window < 5)
+            return 5;
+        if (window > 9)
+            return 9;
+        return window % 2 == 0 ? window + 1 : window;
+    }
+
+    private static double SavitzkyGolayQuadraticCoefficient(int offset, int radius)
+    {
+        int n = radius;
+        double numerator = 3.0 * (3 * n * n + 3 * n - 1 - 5 * offset * offset);
+        double denominator = (2 * n + 1.0) * (4 * n * n + 4 * n - 3);
+        return numerator / denominator;
     }
 
     private static IEnumerable<(double[] X, double[] Y)> SplitSegments(double[] xs, double[] ys)
@@ -261,6 +357,21 @@ public class ChartRenderer
         int boundaryCount = Math.Max(0, result.StateCount - 1);
         if (boundaryCount == 0)
             return Array.Empty<ReadValley>();
+
+        var shifts = result.StatePeaks
+            .Select(p => p.AlignmentShiftMv)
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .DistinctBy(v => Math.Round(v, 3))
+            .OrderBy(v => v)
+            .ToArray();
+        if (shifts.Length >= boundaryCount)
+        {
+            return shifts
+                .Take(boundaryCount)
+                .Select((x, boundary) => new ReadValley(boundary, x))
+                .ToArray();
+        }
 
         double spacing = EstimateReadSpacing(result);
         return Enumerable.Range(0, boundaryCount)

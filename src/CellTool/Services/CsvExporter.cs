@@ -99,7 +99,26 @@ public class CsvExporter
         sb.AppendLine($"样本数,{suggestion.SampleCount}");
         sb.AppendLine($"峰距中位数Code,{suggestion.MedianGapCode:F2}");
         sb.AppendLine($"最大偏差Code,{suggestion.MaxDeviationCode:F2}");
+        sb.AppendLine($"标准差Code,{suggestion.StandardDeviationCode:F2}");
         sb.AppendLine($"诊断,{EscapeCsv(suggestion.Diagnostic)}");
+        if (suggestion.Items.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("L间距分组,最终间距Code,样本数,中位数Code,最大偏差Code,标准差Code,来源,置信度");
+            foreach (var item in suggestion.Items.OrderBy(i => i.LevelIndex))
+            {
+                string source = item.SampleCount > 0 ? item.ConfidenceLabel : "手动";
+                sb.AppendLine(
+                    $"{EscapeCsv(item.Label)}," +
+                    $"{item.SuggestedSpacingCode:F2}," +
+                    $"{item.SampleCount}," +
+                    $"{item.MedianGapCode:F2}," +
+                    $"{item.MaxDeviationCode:F2}," +
+                    $"{item.StandardDeviationCode:F2}," +
+                    $"{EscapeCsv(source)}," +
+                    $"{item.Confidence:P2}");
+            }
+        }
     }
 
     private static void AppendDistributionIntegralSection(StringBuilder sb, DistributionIntegralInfo[] integrals)

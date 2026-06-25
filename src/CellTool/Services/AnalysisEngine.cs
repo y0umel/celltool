@@ -54,57 +54,48 @@ public class AnalysisEngine
         int cellCount = pageTotalBytes * 8;
         int totalCells = wlCount * cellCount;
 
+        var voltageCodes = files.Select(f => (double)f.Code).ToArray();
         var modeEncodings = ParseModeEncodings(config, chip);
-        var statesPerVoltage = new int[voltageCount][];
-        var rawGrayPerVoltage = new int[voltageCount][];
+        int[] groundTruth = Array.Empty<int>();
+        double spacingCode = EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount);
+        var accumulator = new DirectLevelDistributionAccumulator(chip.StateCount, spacingCode);
 
-        for (int v = 0; v < voltageCount; v++)
+        for (int wl = 0; wl < wlCount; wl++)
         {
             ct.ThrowIfCancellationRequested();
-            progress?.Report((0.05 + ((double)v / voltageCount * 0.55),
-                $"Reading {files[v]} ({v + 1}/{voltageCount})..."));
+            progress?.Report((0.05 + ((double)wl / wlCount * 0.67),
+                $"Reading WL {wl} ({wl + 1}/{wlCount}) across {voltageCount} voltage files..."));
 
-            var allCells = new int[totalCells];
-            var allRawGrayCells = new int[totalCells];
+            var entry = groupModel.Entries[wl];
+            int bitsPerCell = entry.PageIndices.Length;
+            var grayDecoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
+            var rawGrayByVoltage = new int[voltageCount][];
 
-            for (int wl = 0; wl < wlCount; wl++)
+            for (int v = 0; v < voltageCount; v++)
             {
                 ct.ThrowIfCancellationRequested();
-                var entry = groupModel.Entries[wl];
-                int bitsPerCell = entry.PageIndices.Length;
-                var encoding = modeEncodings[bitsPerCell];
-                var grayDecoder = new GrayCodeDecoder(encoding, bitsPerCell, config.GrayCodeOrder);
                 var wlData = fileReader.ReadWlBytes(files[v].FilePath, entry, pageTotalBytes, config.StartPage);
-                var states = grayDecoder.DecodeWl(wlData, pageTotalBytes);
-                var rawGrayCodes = grayDecoder.DecodeRawGrayWl(wlData, pageTotalBytes);
-                Array.Copy(states, 0, allCells, wl * cellCount, cellCount);
-                Array.Copy(rawGrayCodes, 0, allRawGrayCells, wl * cellCount, cellCount);
+                rawGrayByVoltage[v] = grayDecoder.DecodeRawGrayWl(wlData, pageTotalBytes);
             }
 
-            statesPerVoltage[v] = allCells;
-            rawGrayPerVoltage[v] = allRawGrayCells;
+            var sourceRawGray = !string.IsNullOrWhiteSpace(config.ReferenceFilePath)
+                ? ReadRawGrayBaselineForWl(config.ReferenceFilePath, config, groupModel, modeEncodings, wl, wlCount, pageTotalBytes)
+                : rawGrayByVoltage[0];
+            AccumulateDirectLevelDistributionsForWl(
+                accumulator,
+                rawGrayByVoltage,
+                sourceRawGray,
+                voltageCodes,
+                modeEncodings[bitsPerCell],
+                bitsPerCell,
+                chip.StateCount,
+                cellCount,
+                config.GrayCodeOrder);
         }
 
-        progress?.Report((0.65, "Computing ground truth via majority vote..."));
-        var groundTruth = ComputeGroundTruth(statesPerVoltage, totalCells, chip.StateCount);
+        progress?.Report((0.72, "Reconstructing Vt distributions..."));
+        var reconstructed = accumulator.ToResult();
 
-        progress?.Report((0.72, "Reconstructing read-boundary Vt distributions..."));
-        var voltageCodes = files.Select(f => (double)f.Code).ToArray();
-        var sourceRawGray = !string.IsNullOrWhiteSpace(config.ReferenceFilePath)
-            ? ReadRawGrayBaseline(config.ReferenceFilePath, config, chip, groupModel, modeEncodings, wlCount, pageTotalBytes, cellCount, totalCells)
-            : rawGrayPerVoltage[0];
-        var reconstructed = ReconstructSourceLevelDistributions(
-            rawGrayPerVoltage,
-            sourceRawGray,
-            voltageCodes,
-            voltageCount,
-            groupModel,
-            modeEncodings,
-            wlCount,
-            cellCount,
-            chip.StateCount,
-            EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount),
-            config.GrayCodeOrder);
         var increments = reconstructed.Curves;
         var curveXValues = reconstructed.XValues;
         var transitionLabels = reconstructed.Labels;
@@ -150,7 +141,7 @@ public class AnalysisEngine
             ErrorTypeDiagnostics = reconstructed.Diagnostics,
             VoltageCodes = voltageCodes,
             TransitionLabels = transitionLabels,
-            LevelSpacingSuggestion = BuildLevelSpacingSuggestion(
+            LevelSpacingSuggestion = reconstructed.SpacingSuggestion ?? BuildLevelSpacingSuggestion(
                 statePeaks,
                 chip.StateCount,
                 EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount)),
@@ -260,6 +251,244 @@ public class AnalysisEngine
             grayCodeOrder);
     }
 
+    private static void AccumulateDirectLevelDistributionsForWl(
+        DirectLevelDistributionAccumulator accumulator,
+        int[][] rawGrayByVoltage,
+        int[] sourceRawGray,
+        double[] voltageCodes,
+        int[] wlEncoding,
+        int bitsPerCell,
+        int stateCount,
+        int cellCount,
+        string grayCodeOrder)
+    {
+        var levelMap = BuildRawGrayToLevelMap(wlEncoding);
+        var descriptors = BuildBitBoundaryDescriptors(wlEncoding, bitsPerCell, grayCodeOrder);
+        int usableCells = Math.Min(cellCount, sourceRawGray.Length);
+        for (int cell = 0; cell < usableCells; cell++)
+        {
+            int sourceRaw = sourceRawGray[cell];
+            int sourceLevel = MapRawGrayToLevel(sourceRaw, levelMap, stateCount);
+            if (sourceLevel < 0 || sourceLevel >= stateCount)
+                continue;
+
+            accumulator.SourceCounts[sourceLevel]++;
+
+            DirectTransitionObservation? left = null;
+            DirectTransitionObservation? right = null;
+            DirectTransitionObservation? endpoint = null;
+            if (sourceLevel > 0)
+            {
+                var boundary = descriptors[sourceLevel - 1];
+                if (boundary.IsValid && boundary.RightRawGray == sourceRaw)
+                {
+                    left = FindDirectTransitionObservation(
+                        rawGrayByVoltage,
+                        cell,
+                        sourceRaw,
+                        boundary.LeftRawGray,
+                        voltageCodes,
+                        neighborOnHighOffsetSide: true);
+                }
+            }
+
+            if (sourceLevel < stateCount - 1 && sourceLevel < descriptors.Length)
+            {
+                var boundary = descriptors[sourceLevel];
+                if (boundary.IsValid && boundary.LeftRawGray == sourceRaw)
+                {
+                    right = FindDirectTransitionObservation(
+                        rawGrayByVoltage,
+                        cell,
+                        sourceRaw,
+                        boundary.RightRawGray,
+                        voltageCodes,
+                        neighborOnHighOffsetSide: false);
+                }
+            }
+
+            if (sourceLevel == 0 && left is null)
+            {
+                endpoint = FindAnySourceExitObservation(
+                    rawGrayByVoltage,
+                    cell,
+                    sourceRaw,
+                    voltageCodes,
+                    preferSourceToOther: false);
+            }
+            else if (sourceLevel == stateCount - 1 && right is null)
+            {
+                endpoint = FindAnySourceExitObservation(
+                    rawGrayByVoltage,
+                    cell,
+                    sourceRaw,
+                    voltageCodes,
+                    preferSourceToOther: true);
+            }
+
+            double? x = ChooseDirectCellPosition(sourceLevel, accumulator.StateCount, accumulator.SpacingCode, left, right);
+            if (!x.HasValue && endpoint.HasValue)
+            {
+                double boundaryCode = sourceLevel == 0
+                    ? BoundaryPositionCode(0, accumulator.SpacingCode)
+                    : BoundaryPositionCode(stateCount - 2, accumulator.SpacingCode);
+                x = RoundCode(boundaryCode + endpoint.Value.Offset);
+            }
+
+            if (x.HasValue)
+            {
+                accumulator.AddPoint(sourceLevel, x.Value);
+            }
+            else if (sourceLevel == 0)
+            {
+                accumulator.LeftOutOfRange[sourceLevel]++;
+            }
+            else if (sourceLevel == stateCount - 1)
+            {
+                accumulator.RightOutOfRange[sourceLevel]++;
+            }
+            else
+            {
+                accumulator.RightOutOfRange[sourceLevel]++;
+            }
+
+            if (left.HasValue && right.HasValue)
+            {
+                double gap = left.Value.Offset - right.Value.Offset;
+                if (gap > 0 && !double.IsNaN(gap) && !double.IsInfinity(gap))
+                    accumulator.SpacingSamples[sourceLevel].Add(gap);
+            }
+        }
+    }
+
+    private static double? ChooseDirectCellPosition(
+        int sourceLevel,
+        int stateCount,
+        double spacingCode,
+        DirectTransitionObservation? left,
+        DirectTransitionObservation? right)
+    {
+        double? leftX = left.HasValue && sourceLevel > 0
+            ? BoundaryPositionCode(sourceLevel - 1, spacingCode) + left.Value.Offset
+            : null;
+        double? rightX = right.HasValue && sourceLevel < stateCount - 1
+            ? BoundaryPositionCode(sourceLevel, spacingCode) + right.Value.Offset
+            : null;
+
+        if (leftX.HasValue && rightX.HasValue)
+        {
+            if (left!.Value.Support != right!.Value.Support)
+                return left.Value.Support > right.Value.Support
+                    ? RoundCode(leftX.Value)
+                    : RoundCode(rightX.Value);
+
+            double levelCenter = sourceLevel == 0
+                ? 0
+                : sourceLevel == stateCount - 1
+                    ? BoundaryPositionCode(stateCount - 2, spacingCode)
+                    : BoundaryPositionCode(sourceLevel - 1, spacingCode) + spacingCode / 2.0;
+            return Math.Abs(leftX.Value - levelCenter) <= Math.Abs(rightX.Value - levelCenter)
+                ? RoundCode(leftX.Value)
+                : RoundCode(rightX.Value);
+        }
+
+        if (leftX.HasValue)
+            return RoundCode(leftX.Value);
+        if (rightX.HasValue)
+            return RoundCode(rightX.Value);
+
+        return null;
+    }
+
+    private static DirectTransitionObservation? FindDirectTransitionObservation(
+        int[][] rawGrayByVoltage,
+        int cell,
+        int sourceRawGray,
+        int neighborRawGray,
+        double[] voltageCodes,
+        bool neighborOnHighOffsetSide)
+    {
+        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
+        DirectTransitionObservation? preferred = null;
+        DirectTransitionObservation? fallback = null;
+
+        for (int v = 1; v < count; v++)
+        {
+            int previous = rawGrayByVoltage[v - 1][cell];
+            int current = rawGrayByVoltage[v][cell];
+            bool sourceToNeighbor = previous == sourceRawGray && current == neighborRawGray;
+            bool neighborToSource = previous == neighborRawGray && current == sourceRawGray;
+            if (!sourceToNeighbor && !neighborToSource)
+                continue;
+
+            int support = sourceToNeighbor
+                ? CountSameBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8) +
+                  CountSameForward(rawGrayByVoltage, cell, v, neighborRawGray, count, 8)
+                : CountSameBackward(rawGrayByVoltage, cell, v - 1, neighborRawGray, count, 8) +
+                  CountSameForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8);
+            var candidate = new DirectTransitionObservation(voltageCodes[v], support);
+            bool isPreferredDirection = neighborOnHighOffsetSide ? sourceToNeighbor : neighborToSource;
+            if (isPreferredDirection)
+                preferred = BetterTransitionCandidate(preferred, candidate);
+            else
+                fallback = BetterTransitionCandidate(fallback, candidate);
+        }
+
+        return preferred ?? fallback;
+    }
+
+    private static DirectTransitionObservation? FindAnySourceExitObservation(
+        int[][] rawGrayByVoltage,
+        int cell,
+        int sourceRawGray,
+        double[] voltageCodes,
+        bool preferSourceToOther)
+    {
+        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
+        DirectTransitionObservation? preferred = null;
+        DirectTransitionObservation? fallback = null;
+
+        for (int v = 1; v < count; v++)
+        {
+            int previous = rawGrayByVoltage[v - 1][cell];
+            int current = rawGrayByVoltage[v][cell];
+            bool sourceToOther = previous == sourceRawGray && current != sourceRawGray;
+            bool otherToSource = previous != sourceRawGray && current == sourceRawGray;
+            if (!sourceToOther && !otherToSource)
+                continue;
+
+            int support = sourceToOther
+                ? CountSameBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8) +
+                  CountDifferentForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8)
+                : CountDifferentBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8) +
+                  CountSameForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8);
+            var candidate = new DirectTransitionObservation(voltageCodes[v], support);
+            bool isPreferredDirection = preferSourceToOther ? sourceToOther : otherToSource;
+            if (isPreferredDirection)
+                preferred = BetterTransitionCandidate(preferred, candidate);
+            else
+                fallback = BetterTransitionCandidate(fallback, candidate);
+        }
+
+        return preferred ?? fallback;
+    }
+
+    private static DirectTransitionObservation? BetterTransitionCandidate(
+        DirectTransitionObservation? current,
+        DirectTransitionObservation candidate)
+    {
+        if (current is null)
+            return candidate;
+        if (candidate.Support > current.Value.Support)
+            return candidate;
+        if (candidate.Support < current.Value.Support)
+            return current;
+
+        return Math.Abs(candidate.Offset) < Math.Abs(current.Value.Offset)
+            ? candidate
+            : current;
+    }
+
     private static SourceLevelDistributionResult ReconstructSourceLevelErrorDistributions(
         int[][] rawGrayPerVoltage,
         int[] sourceRawGrayStates,
@@ -273,287 +502,37 @@ public class AnalysisEngine
         double levelSpacingMv,
         string grayCodeOrder)
     {
-        var sourceLevelDistributions = ComputeSourceLevelErrorDistributions(
-            rawGrayPerVoltage,
-            sourceRawGrayStates,
-            voltageCount,
-            groupModel,
-            modeEncodings,
-            wlCount,
-            cellCount,
-            stateCount);
-        var boundaryDistributions = ComputeSingleBitBoundaryDistributions(
-            rawGrayPerVoltage,
-            sourceRawGrayStates,
-            voltageCount,
-            groupModel,
-            modeEncodings,
-            wlCount,
-            cellCount,
-            stateCount,
-            grayCodeOrder);
-        var displayVoltageCodes = voltageCodes;
-        var labels = Enumerable.Range(0, stateCount)
-            .Select(i => $"L{i}")
-            .ToArray();
-        var componentsByLevel = Enumerable.Range(0, stateCount)
-            .Select(_ => new List<BoundaryLevelComponent>())
-            .ToArray();
-        var curves = new double[stateCount][];
-        var xValues = new double[stateCount][];
-        var peaks = new StatePeakInfo[stateCount];
-        var integrals = new DistributionIntegralInfo[stateCount];
-
         double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
-        int boundaryCount = Math.Max(0, stateCount - 1);
-        for (int boundary = 0; boundary < boundaryCount && boundary < boundaryDistributions.Boundaries.Length; boundary++)
-        {
-            var descriptor = boundaryDistributions.Boundaries[boundary];
-            if (descriptor is null || !descriptor.IsValid)
-                continue;
-
-            double boundaryPositionCode = BoundaryPositionCode(boundary, spacingCode);
-            if (boundary < boundaryDistributions.LeftToRightCurves.Length)
-            {
-                AddBoundaryLevelComponent(
-                    componentsByLevel,
-                    descriptor.LeftLevel,
-                    boundary,
-                    boundaryPositionCode,
-                    boundaryDistributions.LeftToRightCurves[boundary],
-                    $"{labels[descriptor.LeftLevel]}->{labels[descriptor.RightLevel]}");
-            }
-
-            if (boundary < boundaryDistributions.RightToLeftCurves.Length)
-            {
-                AddBoundaryLevelComponent(
-                    componentsByLevel,
-                    descriptor.RightLevel,
-                    boundary,
-                    boundaryPositionCode,
-                    boundaryDistributions.RightToLeftCurves[boundary],
-                    $"{labels[descriptor.RightLevel]}->{labels[descriptor.LeftLevel]}");
-            }
-        }
-
-        for (int level = 0; level < stateCount; level++)
-        {
-            double levelPositionCode = LevelPositionCode(level, stateCount, spacingCode);
-            var points = BuildMergedBoundarySidePoints(componentsByLevel[level], displayVoltageCodes);
-            var sourceRawDelta = ToEnvelopeDistributionDelta(sourceLevelDistributions.CumulativeCurves[level]);
-            bool useSourceFallback = ShouldUseSourceLevelFallback(
-                level,
-                stateCount,
-                points.Sum(p => p.Y),
-                level < sourceLevelDistributions.SourceCounts.Length ? sourceLevelDistributions.SourceCounts[level] : 0);
-            if (useSourceFallback)
-                points = BuildBoundarySidePoints(levelPositionCode, displayVoltageCodes, sourceRawDelta);
-
-            xValues[level] = points.Select(p => p.X).ToArray();
-            curves[level] = points.Select(p => p.Y).ToArray();
-
-            int peakIndex = FindPeakIndex(curves[level]);
-            peaks[level] = new StatePeakInfo
-            {
-                StateIndex = level,
-                Label = labels[level],
-                PeakCode = peakIndex >= 0 ? xValues[level][peakIndex] : 0,
-                LeftBoundaryCode = xValues[level].Length > 0 ? xValues[level][0] : null,
-                RightBoundaryCode = xValues[level].Length > 0 ? xValues[level][^1] : null,
-                TotalCellCount = level < sourceLevelDistributions.SourceCounts.Length ? sourceLevelDistributions.SourceCounts[level] : 0,
-                PeakIncrementValue = peakIndex >= 0 ? curves[level][peakIndex] : 0,
-                AlignmentShiftMv = levelPositionCode,
-                AlignmentScore = null,
-                ObservationSources = useSourceFallback
-                    ? $"source L{level} read as other levels"
-                    : FormatBoundaryObservationSources(componentsByLevel[level])
-            };
-
-            integrals[level] = useSourceFallback
-                ? BuildSourceLevelDistributionIntegralInfo(
-                    level,
-                    labels[level],
-                    sourceLevelDistributions.SourceCounts,
-                    sourceLevelDistributions.CumulativeCurves[level],
-                    sourceRawDelta,
-                    curves[level])
-                : BuildBoundaryDistributionIntegralInfo(
-                    level,
-                    labels[level],
-                    sourceLevelDistributions.SourceCounts,
-                    curves[level],
-                    stateCount);
-        }
-
-        return new SourceLevelDistributionResult
-        {
-            Curves = curves,
-            XValues = xValues,
-            Labels = labels,
-            Peaks = peaks,
-            SourceCounts = sourceLevelDistributions.SourceCounts,
-            Integrals = integrals,
-            Diagnostics = Array.Empty<ErrorTypeDiagnosticInfo>()
-        };
-    }
-
-    private static bool ShouldUseSourceLevelFallback(
-        int level,
-        int stateCount,
-        double boundaryObserved,
-        int sourceCount)
-    {
-        if (level != 0 && level != stateCount - 1)
-            return false;
-        if (sourceCount <= 0)
-            return boundaryObserved <= 0;
-
-        return boundaryObserved < sourceCount * 0.1;
-    }
-
-    private static void AddBoundaryLevelComponent(
-        List<BoundaryLevelComponent>[] componentsByLevel,
-        int targetLevel,
-        int boundaryIndex,
-        double boundaryCode,
-        double[] cumulativeCurve,
-        string directionLabel)
-    {
-        if (targetLevel < 0 || targetLevel >= componentsByLevel.Length)
-            return;
-
-        componentsByLevel[targetLevel].Add(new BoundaryLevelComponent(
-            boundaryIndex,
-            boundaryCode,
-            ToEnvelopeDistributionDelta(cumulativeCurve),
-            directionLabel));
-    }
-
-    private static string FormatBoundaryObservationSources(List<BoundaryLevelComponent> components)
-    {
-        if (components.Count == 0)
-            return "read-boundary directional increments";
-
-        return string.Join("; ", components
-            .Select(c => $"R{c.BoundaryIndex + 1} {c.DirectionLabel}")
-            .Distinct());
-    }
-
-    private static DistributionIntegralInfo BuildBoundaryDistributionIntegralInfo(
-        int level,
-        string label,
-        int[] sourceCounts,
-        double[] displayCurve,
-        int stateCount)
-    {
-        int sourceCount = level < sourceCounts.Length ? sourceCounts[level] : 0;
-        double displayObserved = displayCurve.Sum();
-        double missing = Math.Max(0, sourceCount - displayObserved);
-        double leftOutOfRange = level == 0 ? missing : 0;
-        double rightOutOfRange = level == stateCount - 1 ? missing : 0;
-
-        return new DistributionIntegralInfo
-        {
-            LevelIndex = level,
-            Label = label,
-            SourceCellCount = sourceCount,
-            RawObservedIntegral = displayObserved,
-            DisplayObservedIntegral = displayObserved,
-            LeftOutOfRangeEstimate = leftOutOfRange,
-            RightOutOfRangeEstimate = rightOutOfRange
-        };
-    }
-
-    private static DistributionIntegralInfo BuildSourceLevelDistributionIntegralInfo(
-        int level,
-        string label,
-        int[] sourceCounts,
-        double[] cumulativeCurve,
-        double[] rawDelta,
-        double[] displayDelta)
-    {
-        int sourceCount = level < sourceCounts.Length ? sourceCounts[level] : 0;
-        double rawObserved = rawDelta.Sum();
-        double displayObserved = displayDelta.Sum();
-        double leftOutOfRange = cumulativeCurve.Length > 0 ? cumulativeCurve[0] : 0;
-        double rightOutOfRange = cumulativeCurve.Length > 0
-            ? Math.Max(0, sourceCount - cumulativeCurve[^1])
-            : sourceCount;
-
-        return new DistributionIntegralInfo
-        {
-            LevelIndex = level,
-            Label = label,
-            SourceCellCount = sourceCount,
-            RawObservedIntegral = rawObserved,
-            DisplayObservedIntegral = displayObserved,
-            LeftOutOfRangeEstimate = leftOutOfRange,
-            RightOutOfRangeEstimate = rightOutOfRange
-        };
-    }
-
-    private static SourceLevelErrorDistributionResult ComputeSourceLevelErrorDistributions(
-        int[][] rawGrayPerVoltage,
-        int[] sourceRawGrayStates,
-        int voltageCount,
-        GroupModel groupModel,
-        IReadOnlyDictionary<int, int[]> modeEncodings,
-        int wlCount,
-        int cellCount,
-        int stateCount)
-    {
-        var cumulative = new double[stateCount][];
-        for (int level = 0; level < stateCount; level++)
-            cumulative[level] = new double[voltageCount];
-
-        var sourceCounts = new int[stateCount];
-        var modeMaps = modeEncodings.ToDictionary(
-            kvp => kvp.Key,
-            kvp => BuildRawGrayToLevelMap(kvp.Value));
-
+        var accumulator = new DirectLevelDistributionAccumulator(stateCount, spacingCode);
         for (int wl = 0; wl < wlCount; wl++)
         {
             int bitsPerCell = groupModel.Entries[wl].PageIndices.Length;
-            if (!modeMaps.TryGetValue(bitsPerCell, out var levelMap))
+            if (!modeEncodings.TryGetValue(bitsPerCell, out var encoding))
                 continue;
 
-            int modeStateCount = 1 << bitsPerCell;
             int startCell = wl * cellCount;
-
-            for (int cellOffset = 0; cellOffset < cellCount; cellOffset++)
+            var wlSource = new int[cellCount];
+            Array.Copy(sourceRawGrayStates, startCell, wlSource, 0, cellCount);
+            var wlRawGrayByVoltage = new int[voltageCount][];
+            for (int v = 0; v < voltageCount; v++)
             {
-                int cell = startCell + cellOffset;
-                int sourceLevel = MapRawGrayToLevel(sourceRawGrayStates[cell], levelMap, stateCount);
-                if (sourceLevel < 0 || sourceLevel >= stateCount)
-                    continue;
-
-                sourceCounts[sourceLevel]++;
-                for (int v = 0; v < voltageCount; v++)
-                {
-                    int currentRawGray = rawGrayPerVoltage[v][cell];
-                    if (currentRawGray < 0 || currentRawGray >= modeStateCount)
-                        continue;
-
-                    int currentLevel = MapRawGrayToLevel(currentRawGray, levelMap, stateCount);
-                    if (currentLevel >= 0 && currentLevel != sourceLevel)
-                        cumulative[sourceLevel][v]++;
-                }
+                wlRawGrayByVoltage[v] = new int[cellCount];
+                Array.Copy(rawGrayPerVoltage[v], startCell, wlRawGrayByVoltage[v], 0, cellCount);
             }
+
+            AccumulateDirectLevelDistributionsForWl(
+                accumulator,
+                wlRawGrayByVoltage,
+                wlSource,
+                voltageCodes,
+                encoding,
+                bitsPerCell,
+                stateCount,
+                cellCount,
+                grayCodeOrder);
         }
 
-        return new SourceLevelErrorDistributionResult
-        {
-            CumulativeCurves = cumulative,
-            SourceCounts = sourceCounts
-        };
-    }
-
-    private static double LevelPositionCode(int level, int stateCount, double spacingCode)
-    {
-        if (level == stateCount - 1)
-            return Math.Max(0, stateCount - 2) * spacingCode;
-
-        return level * spacingCode;
+        return accumulator.ToResult();
     }
 
     private static double BoundaryPositionCode(int boundaryIndex, double spacingCode) =>
@@ -579,7 +558,8 @@ public class AnalysisEngine
                 Diagnostic = "当前曲线由多个读电压边界方向分量拼接，同一 L 可能有多个峰；自动峰距推断容易被子峰误导，暂按手动 L 间距绘图。",
                 SampleCount = 0,
                 MedianGapCode = currentSpacingCode,
-                MaxDeviationCode = 0
+                MaxDeviationCode = 0,
+                StandardDeviationCode = 0
             };
         }
 
@@ -609,12 +589,16 @@ public class AnalysisEngine
                 Confidence = 0,
                 ConfidenceLabel = "低",
                 Diagnostic = $"可用峰距样本不足，仅找到 {gaps.Count} 个相邻峰距。",
-                SampleCount = gaps.Count
+                SampleCount = gaps.Count,
+                MedianGapCode = currentSpacingCode,
+                MaxDeviationCode = 0,
+                StandardDeviationCode = 0
             };
         }
 
         double medianGap = Median(gaps);
         double maxDeviation = gaps.Max(g => Math.Abs(g - medianGap));
+        double standardDeviation = StandardDeviation(gaps);
         double normalizedDeviation = medianGap > 0 ? maxDeviation / medianGap : 1;
         double confidence = Math.Clamp(1 - normalizedDeviation / 0.5, 0, 1);
         string confidenceLabel = confidence >= 0.75
@@ -637,49 +621,85 @@ public class AnalysisEngine
             Diagnostic = diagnostic,
             SampleCount = gaps.Count,
             MedianGapCode = medianGap,
-            MaxDeviationCode = maxDeviation
+            MaxDeviationCode = maxDeviation,
+            StandardDeviationCode = standardDeviation
         };
     }
 
-    private static (double X, double Y)[] BuildBoundarySidePoints(
-        double boundaryCode,
-        double[] voltageCodes,
-        double[] curve)
+    private static int CountSameBackward(
+        int[][] rawGrayPerVoltage,
+        int cell,
+        int start,
+        int value,
+        int count,
+        int limit)
     {
-        var points = new List<(double X, double Y)>();
-        for (int v = 0; v < curve.Length && v < voltageCodes.Length; v++)
+        int found = 0;
+        for (int v = start; v >= 0 && found < limit; v--)
         {
-            double count = curve[v];
-            if (count <= 0)
-                continue;
-
-            points.Add((RoundCode(boundaryCode + voltageCodes[v]), count));
+            if (rawGrayPerVoltage[v][cell] != value)
+                break;
+            found++;
         }
 
-        return points
-            .OrderBy(p => p.X)
-            .ToArray();
+        return found;
     }
 
-    private static (double X, double Y)[] BuildMergedBoundarySidePoints(
-        List<BoundaryLevelComponent> components,
-        double[] voltageCodes)
+    private static int CountSameForward(
+        int[][] rawGrayPerVoltage,
+        int cell,
+        int start,
+        int value,
+        int count,
+        int limit)
     {
-        var points = new Dictionary<double, double>();
-        foreach (var component in components)
+        int found = 0;
+        for (int v = start; v < count && found < limit; v++)
         {
-            foreach (var (x, y) in BuildBoundarySidePoints(component.BoundaryCode, voltageCodes, component.DeltaCurve))
-            {
-                points[x] = points.TryGetValue(x, out double current)
-                    ? current + y
-                    : y;
-            }
+            if (rawGrayPerVoltage[v][cell] != value)
+                break;
+            found++;
         }
 
-        return points
-            .OrderBy(p => p.Key)
-            .Select(p => (p.Key, p.Value))
-            .ToArray();
+        return found;
+    }
+
+    private static int CountDifferentBackward(
+        int[][] rawGrayPerVoltage,
+        int cell,
+        int start,
+        int value,
+        int count,
+        int limit)
+    {
+        int found = 0;
+        for (int v = start; v >= 0 && found < limit; v--)
+        {
+            if (rawGrayPerVoltage[v][cell] == value)
+                break;
+            found++;
+        }
+
+        return found;
+    }
+
+    private static int CountDifferentForward(
+        int[][] rawGrayPerVoltage,
+        int cell,
+        int start,
+        int value,
+        int count,
+        int limit)
+    {
+        int found = 0;
+        for (int v = start; v < count && found < limit; v++)
+        {
+            if (rawGrayPerVoltage[v][cell] == value)
+                break;
+            found++;
+        }
+
+        return found;
     }
 
     public static BitBoundaryDistributionResult ComputeSingleBitBoundaryDistributions(
@@ -851,45 +871,6 @@ public class AnalysisEngine
         return descriptors;
     }
 
-    public static double[] ToIncreasingDistributionDelta(double[] cumulativeCurve)
-    {
-        if (cumulativeCurve.Length == 0)
-            return Array.Empty<double>();
-
-        var delta = new double[cumulativeCurve.Length];
-        double maxSoFar = cumulativeCurve[0];
-        for (int i = 1; i < cumulativeCurve.Length; i++)
-        {
-            double next = Math.Max(maxSoFar, cumulativeCurve[i]);
-            delta[i] = Math.Max(0, next - maxSoFar);
-            maxSoFar = next;
-        }
-
-        return delta;
-    }
-
-    public static double[] ToDecreasingDistributionDelta(double[] cumulativeCurve)
-    {
-        if (cumulativeCurve.Length == 0)
-            return Array.Empty<double>();
-
-        var delta = new double[cumulativeCurve.Length];
-        double minSoFar = cumulativeCurve[0];
-        for (int i = 1; i < cumulativeCurve.Length; i++)
-        {
-            double next = Math.Min(minSoFar, cumulativeCurve[i]);
-            delta[i] = Math.Max(0, minSoFar - next);
-            minSoFar = next;
-        }
-
-        return delta;
-    }
-
-    public static double[] ToEnvelopeDistributionDelta(double[] cumulativeCurve) =>
-        SumCurves(
-            ToIncreasingDistributionDelta(cumulativeCurve),
-            ToDecreasingDistributionDelta(cumulativeCurve));
-
     public static double DefaultLevelSpacingCode(int stateCount) => stateCount switch
     {
         4 => 145,
@@ -904,22 +885,6 @@ public class AnalysisEngine
             return levelSpacingCode;
 
         return DefaultLevelSpacingCode(stateCount);
-    }
-
-    private static int FindPeakIndex(double[] curve)
-    {
-        int peakIndex = -1;
-        double peakValue = 0;
-        for (int i = 0; i < curve.Length; i++)
-        {
-            if (curve[i] > peakValue)
-            {
-                peakValue = curve[i];
-                peakIndex = i;
-            }
-        }
-
-        return peakIndex;
     }
 
     private static int MapRawGrayToLevel(int rawGray, int[] levelMap, int stateCount)
@@ -945,19 +910,14 @@ public class AnalysisEngine
             : (ordered[mid - 1] + ordered[mid]) / 2.0;
     }
 
-    private static double[] SumCurves(double[] left, double[] right)
+    private static double StandardDeviation(IReadOnlyCollection<double> values)
     {
-        int length = Math.Max(left.Length, right.Length);
-        var sum = new double[length];
-        for (int i = 0; i < length; i++)
-        {
-            if (i < left.Length)
-                sum[i] += left[i];
-            if (i < right.Length)
-                sum[i] += right[i];
-        }
+        if (values.Count == 0)
+            return 0;
 
-        return sum;
+        double average = values.Average();
+        double variance = values.Sum(v => Math.Pow(v - average, 2)) / values.Count;
+        return Math.Sqrt(variance);
     }
 
     private static int[] BuildBoundaryPairMap(BitBoundaryDescriptor[] descriptors, int stateCount)
@@ -1201,59 +1161,45 @@ public class AnalysisEngine
         return ReadSelectedBytes(referenceFilePath, config, chip, groupModel, wlCount);
     }
 
-    private int[] ReadRawGrayBaseline(
+    private int[] ReadRawGrayBaselineForWl(
         string baselineFilePath,
         AnalysisConfig config,
-        ChipInfo chip,
         GroupModel groupModel,
         Dictionary<int, int[]> modeEncodings,
+        int wl,
         int wlCount,
-        int pageTotalBytes,
-        int cellCount,
-        int totalCells)
+        int pageTotalBytes)
     {
         var fileInfo = new FileInfo(baselineFilePath);
         if (!fileInfo.Exists)
             throw new FileNotFoundException($"Baseline file not found: {baselineFilePath}", baselineFilePath);
 
-        var baseline = new int[totalCells];
+        var entry = groupModel.Entries[wl];
+        int bitsPerCell = entry.PageIndices.Length;
+        var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
         long selectedByteCount = groupModel.Entries
             .Take(wlCount)
-            .Sum(entry => (long)entry.PageIndices.Length * pageTotalBytes);
+            .Sum(e => (long)e.PageIndices.Length * pageTotalBytes);
 
         if (fileInfo.Length == selectedByteCount)
         {
-            var selectedData = File.ReadAllBytes(baselineFilePath);
-            int offset = 0;
+            long offset = 0;
+            for (int i = 0; i < wl; i++)
+                offset += (long)groupModel.Entries[i].PageIndices.Length * pageTotalBytes;
 
-            for (int wl = 0; wl < wlCount; wl++)
-            {
-                var entry = groupModel.Entries[wl];
-                int bitsPerCell = entry.PageIndices.Length;
-                int wlBytes = bitsPerCell * pageTotalBytes;
-                var wlData = new byte[wlBytes];
-                Array.Copy(selectedData, offset, wlData, 0, wlBytes);
-                offset += wlBytes;
+            int wlBytes = bitsPerCell * pageTotalBytes;
+            var wlData = new byte[wlBytes];
+            using var stream = File.OpenRead(baselineFilePath);
+            stream.Seek(offset, SeekOrigin.Begin);
+            int read = stream.Read(wlData, 0, wlBytes);
+            if (read != wlBytes)
+                throw new EndOfStreamException($"Baseline file ended while reading WL {wl}.");
 
-                var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
-                var rawGray = decoder.DecodeRawGrayWl(wlData, pageTotalBytes);
-                Array.Copy(rawGray, 0, baseline, wl * cellCount, cellCount);
-            }
-
-            return baseline;
+            return decoder.DecodeRawGrayWl(wlData, pageTotalBytes);
         }
 
-        for (int wl = 0; wl < wlCount; wl++)
-        {
-            var entry = groupModel.Entries[wl];
-            int bitsPerCell = entry.PageIndices.Length;
-            var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
-            var wlData = fileReader.ReadWlBytes(baselineFilePath, entry, pageTotalBytes, config.StartPage);
-            var rawGray = decoder.DecodeRawGrayWl(wlData, pageTotalBytes);
-            Array.Copy(rawGray, 0, baseline, wl * cellCount, cellCount);
-        }
-
-        return baseline;
+        var selectedWlData = fileReader.ReadWlBytes(baselineFilePath, entry, pageTotalBytes, config.StartPage);
+        return decoder.DecodeRawGrayWl(selectedWlData, pageTotalBytes);
     }
 
     private byte[] ReadSelectedBytes(
@@ -1297,12 +1243,7 @@ public class SourceLevelDistributionResult
     public int[] SourceCounts { get; init; } = Array.Empty<int>();
     public DistributionIntegralInfo[] Integrals { get; init; } = Array.Empty<DistributionIntegralInfo>();
     public ErrorTypeDiagnosticInfo[] Diagnostics { get; init; } = Array.Empty<ErrorTypeDiagnosticInfo>();
-}
-
-public class SourceLevelErrorDistributionResult
-{
-    public double[][] CumulativeCurves { get; init; } = Array.Empty<double[]>();
-    public int[] SourceCounts { get; init; } = Array.Empty<int>();
+    public LevelSpacingSuggestionInfo? SpacingSuggestion { get; init; }
 }
 
 public class BitBoundaryDistributionResult
@@ -1314,12 +1255,6 @@ public class BitBoundaryDistributionResult
     public int[] BoundarySourceCounts { get; init; } = Array.Empty<int>();
     public BitBoundaryDescriptor?[] Boundaries { get; init; } = Array.Empty<BitBoundaryDescriptor?>();
 }
-
-internal readonly record struct BoundaryLevelComponent(
-    int BoundaryIndex,
-    double BoundaryCode,
-    double[] DeltaCurve,
-    string DirectionLabel);
 
 public class BitBoundaryDescriptor
 {
@@ -1358,3 +1293,222 @@ public class BitBoundaryDescriptor
         };
     }
 }
+
+internal sealed class DirectLevelDistributionAccumulator
+{
+    private readonly Dictionary<double, double>[] histograms;
+
+    public DirectLevelDistributionAccumulator(int stateCount, double spacingCode)
+    {
+        StateCount = stateCount;
+        SpacingCode = Math.Max(0, spacingCode);
+        histograms = Enumerable.Range(0, stateCount)
+            .Select(_ => new Dictionary<double, double>())
+            .ToArray();
+        SourceCounts = new int[stateCount];
+        LeftOutOfRange = new double[stateCount];
+        RightOutOfRange = new double[stateCount];
+        SpacingSamples = Enumerable.Range(0, stateCount)
+            .Select(_ => new List<double>())
+            .ToArray();
+    }
+
+    public int StateCount { get; }
+    public double SpacingCode { get; }
+    public int[] SourceCounts { get; }
+    public double[] LeftOutOfRange { get; }
+    public double[] RightOutOfRange { get; }
+    public List<double>[] SpacingSamples { get; }
+
+    public void AddPoint(int level, double x)
+    {
+        if (level < 0 || level >= histograms.Length)
+            return;
+
+        double rounded = Math.Round(x, 6);
+        histograms[level][rounded] = histograms[level].TryGetValue(rounded, out double current)
+            ? current + 1
+            : 1;
+    }
+
+    public SourceLevelDistributionResult ToResult()
+    {
+        var labels = Enumerable.Range(0, StateCount).Select(i => $"L{i}").ToArray();
+        var curves = new double[StateCount][];
+        var xValues = new double[StateCount][];
+        var peaks = new StatePeakInfo[StateCount];
+        var integrals = new DistributionIntegralInfo[StateCount];
+
+        for (int level = 0; level < StateCount; level++)
+        {
+            var points = histograms[level].OrderBy(p => p.Key).ToArray();
+            xValues[level] = points.Select(p => p.Key).ToArray();
+            curves[level] = points.Select(p => p.Value).ToArray();
+            int peakIndex = LocalFindPeakIndex(curves[level]);
+            double levelPosition = level == StateCount - 1
+                ? Math.Max(0, StateCount - 2) * SpacingCode
+                : level * SpacingCode;
+
+            peaks[level] = new StatePeakInfo
+            {
+                StateIndex = level,
+                Label = labels[level],
+                PeakCode = peakIndex >= 0 ? xValues[level][peakIndex] : 0,
+                LeftBoundaryCode = xValues[level].Length > 0 ? xValues[level][0] : null,
+                RightBoundaryCode = xValues[level].Length > 0 ? xValues[level][^1] : null,
+                TotalCellCount = SourceCounts[level],
+                PeakIncrementValue = peakIndex >= 0 ? curves[level][peakIndex] : 0,
+                AlignmentShiftMv = levelPosition,
+                AlignmentScore = null,
+                ObservationSources = "direct adjacent raw Gray transition"
+            };
+
+            double observed = curves[level].Sum();
+            integrals[level] = new DistributionIntegralInfo
+            {
+                LevelIndex = level,
+                Label = labels[level],
+                SourceCellCount = SourceCounts[level],
+                RawObservedIntegral = observed,
+                DisplayObservedIntegral = observed,
+                LeftOutOfRangeEstimate = LeftOutOfRange[level],
+                RightOutOfRangeEstimate = RightOutOfRange[level]
+            };
+        }
+
+        return new SourceLevelDistributionResult
+        {
+            Curves = curves,
+            XValues = xValues,
+            Labels = labels,
+            Peaks = peaks,
+            SourceCounts = SourceCounts.ToArray(),
+            Integrals = integrals,
+            Diagnostics = Array.Empty<ErrorTypeDiagnosticInfo>(),
+            SpacingSuggestion = BuildSpacingSuggestion()
+        };
+    }
+
+    private LevelSpacingSuggestionInfo? BuildSpacingSuggestion()
+    {
+        if (StateCount <= 2 || SpacingCode <= 0)
+            return null;
+
+        var items = Enumerable.Range(1, StateCount - 2)
+            .Select(level => BuildItem(level, SpacingSamples[level]))
+            .ToArray();
+        var valid = items.Where(i => i.SampleCount > 0).ToArray();
+        if (valid.Length == 0)
+        {
+            return new LevelSpacingSuggestionInfo
+            {
+                CurrentSpacingCode = SpacingCode,
+                SuggestedSpacingCode = SpacingCode,
+                Confidence = 0,
+                ConfidenceLabel = "低",
+                Diagnostic = "未找到同一源 Level 同时到左右相邻 Gray code 的 direct 跳变样本，绘图使用手动 L 间距。",
+                SampleCount = 0,
+                MedianGapCode = SpacingCode,
+                MaxDeviationCode = 0,
+                StandardDeviationCode = 0,
+                Items = items
+            };
+        }
+
+        var values = valid.Select(i => i.SuggestedSpacingCode).ToArray();
+        double suggested = LocalMedian(values);
+        double std = LocalStandardDeviation(values);
+        double maxDeviation = values.Max(v => Math.Abs(v - suggested));
+        double coverage = (double)valid.Length / Math.Max(1, StateCount - 2);
+        double confidence = Math.Clamp((1 - (suggested > 0 ? std / suggested : 1)) * coverage, 0, 1);
+
+        return new LevelSpacingSuggestionInfo
+        {
+            CurrentSpacingCode = SpacingCode,
+            SuggestedSpacingCode = suggested,
+            Confidence = confidence,
+            ConfidenceLabel = confidence >= 0.75 ? "高" : confidence >= 0.45 ? "中" : "低",
+            Diagnostic = "按同一源 Level 的左右 direct 跳变 offset 差估计各段 L 间距；当前绘图使用手动 L 间距定位边界。",
+            SampleCount = valid.Sum(i => i.SampleCount),
+            MedianGapCode = suggested,
+            MaxDeviationCode = maxDeviation,
+            StandardDeviationCode = std,
+            Items = items
+        };
+    }
+
+    private LevelSpacingEstimateInfo BuildItem(int level, IReadOnlyCollection<double> samples)
+    {
+        if (samples.Count == 0)
+        {
+            return new LevelSpacingEstimateInfo
+            {
+                LevelIndex = level,
+                Label = $"L{level}",
+                SuggestedSpacingCode = SpacingCode,
+                SampleCount = 0,
+                MedianGapCode = SpacingCode,
+                MaxDeviationCode = 0,
+                StandardDeviationCode = 0,
+                Confidence = 0,
+                ConfidenceLabel = "手动"
+            };
+        }
+
+        double median = LocalMedian(samples);
+        double std = LocalStandardDeviation(samples);
+        double confidence = Math.Clamp(1 - (median > 0 ? std / median : 1), 0, 1);
+        return new LevelSpacingEstimateInfo
+        {
+            LevelIndex = level,
+            Label = $"L{level}",
+            SuggestedSpacingCode = median,
+            SampleCount = samples.Count,
+            MedianGapCode = median,
+            MaxDeviationCode = samples.Max(v => Math.Abs(v - median)),
+            StandardDeviationCode = std,
+            Confidence = confidence,
+            ConfidenceLabel = confidence >= 0.75 ? "高" : confidence >= 0.45 ? "中" : "低"
+        };
+    }
+
+    private static int LocalFindPeakIndex(double[] curve)
+    {
+        int peakIndex = -1;
+        double peakValue = 0;
+        for (int i = 0; i < curve.Length; i++)
+        {
+            if (curve[i] > peakValue)
+            {
+                peakValue = curve[i];
+                peakIndex = i;
+            }
+        }
+
+        return peakIndex;
+    }
+
+    private static double LocalMedian(IReadOnlyCollection<double> values)
+    {
+        if (values.Count == 0)
+            return double.NaN;
+
+        var ordered = values.OrderBy(v => v).ToArray();
+        int mid = ordered.Length / 2;
+        return ordered.Length % 2 == 1
+            ? ordered[mid]
+            : (ordered[mid - 1] + ordered[mid]) / 2.0;
+    }
+
+    private static double LocalStandardDeviation(IReadOnlyCollection<double> values)
+    {
+        if (values.Count == 0)
+            return 0;
+
+        double average = values.Average();
+        double variance = values.Sum(v => Math.Pow(v - average, 2)) / values.Count;
+        return Math.Sqrt(variance);
+    }
+}
+
+internal readonly record struct DirectTransitionObservation(double Offset, int Support);

@@ -60,6 +60,12 @@ public partial class ChartConfigViewModel : ObservableObject
     private bool _showLegend = true;
 
     [ObservableProperty]
+    private bool _useSavitzkyGolaySmoothing = true;
+
+    [ObservableProperty]
+    private int _savitzkyGolayWindow = 5;
+
+    [ObservableProperty]
     private string _levelSpacingSuggestionText = "未计算";
 
     public ObservableCollection<LimitMissStat> LimitMissStats { get; } = new();
@@ -83,6 +89,8 @@ public partial class ChartConfigViewModel : ObservableObject
     partial void OnShowBoundaryLinesChanged(bool value) => SaveAndRefresh();
     partial void OnShowReadVoltageChanged(bool value) => SaveAndRefresh();
     partial void OnShowLegendChanged(bool value) => SaveAndRefresh();
+    partial void OnUseSavitzkyGolaySmoothingChanged(bool value) => SaveAndRefresh();
+    partial void OnSavitzkyGolayWindowChanged(int value) => SaveAndRefresh();
 
     [RelayCommand]
     private void SaveChartTemplate()
@@ -166,7 +174,9 @@ public partial class ChartConfigViewModel : ObservableObject
             YMax = YMax,
             ShowBoundaryLines = ShowBoundaryLines,
             ShowReadVoltage = ShowReadVoltage,
-            ShowLegend = ShowLegend
+            ShowLegend = ShowLegend,
+            UseSavitzkyGolaySmoothing = UseSavitzkyGolaySmoothing,
+            SavitzkyGolayWindow = SavitzkyGolayWindow
         };
     }
 
@@ -185,6 +195,8 @@ public partial class ChartConfigViewModel : ObservableObject
             ShowBoundaryLines = config.ShowBoundaryLines;
             ShowReadVoltage = config.ShowReadVoltage;
             ShowLegend = config.ShowLegend;
+            UseSavitzkyGolaySmoothing = config.UseSavitzkyGolaySmoothing;
+            SavitzkyGolayWindow = config.SavitzkyGolayWindow;
         }
         finally
         {
@@ -197,6 +209,14 @@ public partial class ChartConfigViewModel : ObservableObject
         if (suggestion is null)
             return "未计算";
 
-        return $"建议 {suggestion.SuggestedSpacingCode:F2} code，置信 {suggestion.ConfidenceLabel} ({suggestion.Confidence:P0})；当前 {suggestion.CurrentSpacingCode:F2} code。{suggestion.Diagnostic}";
+        string detail = suggestion.Items.Length == 0
+            ? Environment.NewLine + "分组样本: 无，全部使用手动间距。"
+            : Environment.NewLine + string.Join(
+                Environment.NewLine,
+                suggestion.Items.Select(i => i.SampleCount > 0
+                    ? $"{i.Label}: {i.SuggestedSpacingCode:F2} code, σ {i.StandardDeviationCode:F2}, 样本 {i.SampleCount}, 置信 {i.ConfidenceLabel}"
+                    : $"{i.Label}: {i.SuggestedSpacingCode:F2} code, 手动"));
+
+        return $"最终 {suggestion.SuggestedSpacingCode:F2} code，σ {suggestion.StandardDeviationCode:F2}，置信 {suggestion.ConfidenceLabel} ({suggestion.Confidence:P0})；手动 {suggestion.CurrentSpacingCode:F2} code。{suggestion.Diagnostic}{detail}";
     }
 }

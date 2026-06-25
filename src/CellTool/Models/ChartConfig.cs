@@ -12,4 +12,6 @@ public class ChartConfig
     public bool ShowBoundaryLines { get; set; } = true;
     public bool ShowReadVoltage { get; set; } = true;
     public bool ShowLegend { get; set; } = true;
+    public bool UseSavitzkyGolaySmoothing { get; set; } = true;
+    public int SavitzkyGolayWindow { get; set; } = 5;
 }

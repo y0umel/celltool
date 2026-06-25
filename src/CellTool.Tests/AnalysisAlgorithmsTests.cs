@@ -194,16 +194,6 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
-    public void ToEnvelopeDistributionDelta_UsesMonotonicEnvelopeFromScanEdges()
-    {
-        double[] cumulative = [8, 5, 2, 0, 0, 3, 6, 8];
-
-        var delta = AnalysisEngine.ToEnvelopeDistributionDelta(cumulative);
-
-        Assert.Equal([0, 3, 3, 2, 0, 0, 0, 0], delta);
-    }
-
-    [Fact]
     public void BuildLevelSpacingSuggestion_UsesAdjacentPeakGapMedian()
     {
         StatePeakInfo[] peaks =
@@ -225,6 +215,127 @@ public class AnalysisAlgorithmsTests
         Assert.Equal(5, suggestion.SampleCount);
         Assert.Equal("中", suggestion.ConfidenceLabel);
         Assert.Contains("不自动覆盖", suggestion.Diagnostic);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_DoesNotMirrorSingleSideDirectTransition()
+    {
+        int[][] rawGrayStates =
+        [
+            [6, 6, 6, 6],
+            [6, 6, 6, 7],
+            [6, 6, 7, 7],
+            [6, 7, 7, 7]
+        ];
+        int[] sourceBaseline = [6, 6, 6, 6];
+        double[] voltageCodes = [-20, 0, 20, 40];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 4,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        Assert.Equal([0, 20, 40], result.XValues[1]);
+        Assert.Equal([1, 1, 1], result.Curves[1]);
+        Assert.DoesNotContain(result.XValues[1], x => x < 0);
+        Assert.Equal(3, result.Integrals[1].DisplayObservedIntegral);
+    }
+
+    [Fact]
+    public void SavitzkyGolayQuadratic_KeepsConstantCurveUnchanged()
+    {
+        double[] values = [5, 5, 5, 5, 5, 5, 5];
+
+        var smoothed = ChartRenderer.ApplySavitzkyGolayQuadratic(values, window: 5);
+
+        Assert.All(smoothed, y => Assert.Equal(5, y, precision: 6));
+    }
+
+    [Fact]
+    public void SavitzkyGolayDisplayCurve_PreservesPeakPositionAndClipsNegativeValues()
+    {
+        double[] xs = [0, 1, 2, 3, 4, 5, 6];
+        double[] ys = [0, 2, 6, 10, 6, 2, 0];
+
+        var display = ChartRenderer.BuildDisplayCurve(
+            xs,
+            ys,
+            new ChartConfig { UseSavitzkyGolaySmoothing = true, SavitzkyGolayWindow = 5 });
+
+        int peakIndex = Array.IndexOf(display.Y, display.Y.Max());
+        Assert.Equal(3, display.X[peakIndex]);
+        Assert.All(display.Y, y => Assert.True(y >= 0));
+    }
+
+    [Fact]
+    public void SavitzkyGolayDisplayCurve_DoesNotBridgeLargeXGaps()
+    {
+        double[] xs = [0, 1, 2, 20, 21, 22];
+        double[] ys = [0, 8, 0, 0, 8, 0];
+
+        var display = ChartRenderer.BuildDisplayCurve(
+            xs,
+            ys,
+            new ChartConfig { UseSavitzkyGolaySmoothing = true, SavitzkyGolayWindow = 5 });
+
+        Assert.Equal([0, 1, 2, 3, 19, 20, 21, 22], display.X);
+        Assert.Equal(0, display.Y[3]);
+        Assert.Equal(0, display.Y[4]);
+    }
+
+    [Fact]
+    public void SavitzkyGolayDisplayCurve_DoesNotAppendZeroTailPoints()
+    {
+        double[] xs = [0, 1, 2, 5];
+        double[] ys = [3, 6, 3, 1];
+
+        var display = ChartRenderer.BuildDisplayCurve(
+            xs,
+            ys,
+            new ChartConfig { UseSavitzkyGolaySmoothing = true, SavitzkyGolayWindow = 5 });
+
+        Assert.Equal(xs, display.X);
+        Assert.Equal(ys.Length, display.Y.Length);
+    }
+
+    [Fact]
+    public void LogDisplayY_NeverDropsBelowZero()
+    {
+        double[] values = [-5, 0, 0.5, 1, 10, 100];
+
+        var logY = ChartRenderer.BuildLogDisplayY(values);
+
+        Assert.All(logY, y => Assert.True(y >= 0));
+        Assert.Equal(0, logY[0]);
+        Assert.Equal(0, logY[1]);
+        Assert.Equal(0, logY[2]);
+        Assert.Equal(0, logY[3]);
+        Assert.Equal(1, logY[4], precision: 6);
+        Assert.Equal(2, logY[5], precision: 6);
+    }
+
+    [Fact]
+    public void SavitzkyGolayDisplayCurve_ReturnsRawCurveWhenDisabled()
+    {
+        double[] xs = [2, 0, 1];
+        double[] ys = [6, 0, 2];
+
+        var display = ChartRenderer.BuildDisplayCurve(
+            xs,
+            ys,
+            new ChartConfig { UseSavitzkyGolaySmoothing = false });
+
+        Assert.Equal([0, 1, 2], display.X);
+        Assert.Equal([0, 2, 6], display.Y);
     }
 
     [Fact]
@@ -258,113 +369,6 @@ public class AnalysisAlgorithmsTests
         Assert.Equal(1, integral.RawObservedIntegral);
         Assert.Equal(3, integral.LeftOutOfRangeEstimate);
         Assert.Equal(0, integral.RightOutOfRangeEstimate);
-    }
-
-    [Fact]
-    public void ReconstructSourceLevelDistributions_OutputsPhysicalLevelCurves()
-    {
-        int[][] rawGrayStates =
-        [
-            [7, 6, 4],
-            [7, 6, 4],
-            [6, 4, 0],
-            [6, 4, 0],
-            [7, 6, 4]
-        ];
-        int[] sourceBaseline = [7, 6, 4];
-        double[] voltageCodes = [-2, -1, 0, 1, 2];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
-
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 5,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 3,
-            stateCount: 8,
-            levelSpacingMv: 80);
-
-        Assert.Equal(
-            ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7"],
-            result.Labels);
-        Assert.Equal(8, result.Curves.Length);
-        Assert.Equal([1], result.Curves[0]);
-        Assert.Equal([0], result.XValues[0]);
-        Assert.Equal([1], result.Curves[1]);
-        Assert.Equal(80, result.Peaks[1].PeakCode);
-        Assert.Equal([1], result.Curves[2]);
-        Assert.Equal(160, result.Peaks[2].PeakCode);
-        Assert.Equal("R1 L1->L0; R2 L1->L2", result.Peaks[1].ObservationSources);
-        Assert.Equal(80, result.Peaks[1].AlignmentShiftMv);
-    }
-
-    [Fact]
-    public void ReconstructSourceLevelDistributions_ComposesInteriorLevelFromBothAdjacentBoundaries()
-    {
-        int[][] rawGrayStates =
-        [
-            [6, 6],
-            [7, 4],
-            [7, 4]
-        ];
-        int[] sourceBaseline = [6, 6];
-        double[] voltageCodes = [-1, 0, 1];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
-
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 3,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 2,
-            stateCount: 8,
-            levelSpacingMv: 80);
-
-        Assert.Equal([0, 80], result.XValues[1]);
-        Assert.Equal([1, 1], result.Curves[1]);
-        Assert.Equal(2, result.Integrals[1].DisplayObservedIntegral);
-        Assert.Equal("R1 L1->L0; R2 L1->L2", result.Peaks[1].ObservationSources);
-    }
-
-    [Fact]
-    public void ReconstructSourceLevelDistributions_PlacesPhysicalLevelCurvesByManualCodeSpacing()
-    {
-        int[][] rawGrayStates =
-        [
-            [7, 6, 4],
-            [7, 6, 4],
-            [6, 4, 0],
-            [6, 4, 0],
-            [7, 6, 4]
-        ];
-        int[] sourceBaseline = [7, 6, 4];
-        double[] voltageCodes = [-2, -1, 0, 1, 2];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
-
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 5,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 3,
-            stateCount: 8,
-            levelSpacingMv: 80);
-
-        Assert.Equal([0], result.XValues[0]);
-        Assert.Equal(80, result.Peaks[1].PeakCode);
-        Assert.Equal(160, result.Peaks[2].PeakCode);
     }
 
     [Fact]
@@ -407,90 +411,72 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
-    public void ReconstructSourceLevelDistributions_UsesRawVoltageCodeOffsets()
+    public async Task RunAsync_TlcBoundaryComponentsCountsEachCellOnceAndTracksLimits()
     {
-        int[][] rawGrayStates =
-        [
-            [6],
-            [6],
-            [4]
-        ];
-        int[] sourceBaseline = [6];
-        double[] voltageCodes = [-128, 0, 127];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
+        string root = Path.Combine(Path.GetTempPath(), $"celltool-neighbor-{Guid.NewGuid():N}");
+        string input = Path.Combine(root, "offsets");
+        Directory.CreateDirectory(input);
+        try
+        {
+            const int pageBytes = 1;
+            WriteTlcFile(Path.Combine(root, "source.bin"), [6, 6, 5, 7, 2, 1], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-40"), [4, 6, 5, 7, 4, 2], pageBytes);
+            WriteTlcFile(Path.Combine(input, "0"), [6, 6, 5, 7, 2, 1], pageBytes);
+            WriteTlcFile(Path.Combine(input, "40"), [6, 7, 1, 7, 4, 2], pageBytes);
 
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 3,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 1,
-            stateCount: 8,
-            levelSpacingMv: 80);
+            var config = new AnalysisConfig
+            {
+                InputDirectory = input,
+                OutputDirectory = root,
+                ReferenceFilePath = Path.Combine(root, "source.bin"),
+                VoltageMinCode = -40,
+                VoltageMaxCode = 40,
+                VoltageStepCode = 40,
+                WlCount = 1,
+                StartPage = 0,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                CodewordsPerPage = 1,
+                TlcLevelSpacingMv = 80,
+                GrayCodeOrder = "U-M-L",
+                TlcWlEncoding = "7,6,4,0,2,3,1,5"
+            };
+            var chip = new ChipInfo
+            {
+                Type = XlcType.TLC,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            };
+            var groupModel = OneTlcWl();
 
-        Assert.Equal([207], result.XValues[1]);
-    }
+            var result = await new AnalysisEngine().RunAsync(config, chip, groupModel);
 
-    [Fact]
-    public void ReconstructSourceLevelDistributions_KeepsLastLevelAtLastReadBoundary()
-    {
-        int[][] rawGrayStates =
-        [
-            [5],
-            [1],
-            [1]
-        ];
-        int[] sourceBaseline = [5];
-        double[] voltageCodes = [-1, 0, 1];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
-
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 3,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 1,
-            stateCount: 8,
-            levelSpacingMv: 80);
-
-        Assert.Equal([480], result.XValues[7]);
-    }
-
-    [Fact]
-    public void ReconstructSourceLevelDistributions_UsesSourceLevelEvenForMultiBitChanges()
-    {
-        int[][] rawGrayStates =
-        [
-            [4, 2],
-            [7, 2],
-            [4, 2]
-        ];
-        int[] sourceBaseline = [7, 4];
-        double[] voltageCodes = [-1, 0, 1];
-        var groupModel = OneTlcWl();
-        var encodings = TlcEncodings();
-
-        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
-            rawGrayStates,
-            sourceBaseline,
-            voltageCodes,
-            voltageCount: 3,
-            groupModel,
-            encodings,
-            wlCount: 1,
-            cellCount: 2,
-            stateCount: 8,
-            levelSpacingMv: 80);
-
-        Assert.Contains(1, result.Curves[0]);
+            Assert.Equal(2, result.DistributionIntegrals[1].SourceCellCount);
+            Assert.Equal(2, result.DistributionIntegrals[1].DisplayObservedIntegral);
+            Assert.Equal(1, result.CurvePointValue(level: 1, x: 40));
+            Assert.Equal(1, result.CurvePointValue(level: 1, x: 80));
+            Assert.Equal(0, result.CurvePointValue(level: 1, x: 120));
+            Assert.Equal(1, result.DistributionIntegrals[7].DisplayObservedIntegral);
+            Assert.Equal(1, result.CurvePointValue(level: 7, x: 520));
+            Assert.Equal(0, result.DistributionIntegrals[7].RightOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[0].LeftOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[4].SourceCellCount);
+            Assert.Equal(0, result.DistributionIntegrals[4].DisplayObservedIntegral);
+            Assert.Equal(0, result.DistributionIntegrals[4].LeftOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[4].RightOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[6].SourceCellCount);
+            Assert.Equal(0, result.DistributionIntegrals[6].DisplayObservedIntegral);
+            Assert.Equal(0, result.DistributionIntegrals[6].LeftOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[6].RightOutOfRangeEstimate);
+            Assert.NotNull(result.LevelSpacingSuggestion);
+            Assert.Equal(80, result.LevelSpacingSuggestion.SuggestedSpacingCode);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -547,4 +533,40 @@ public class AnalysisAlgorithmsTests
         return values;
     }
 
+    private static void WriteTlcFile(string path, int[] rawGrayCells, int pageBytes)
+    {
+        var pages = new byte[3 * pageBytes];
+        for (int cell = 0; cell < rawGrayCells.Length; cell++)
+        {
+            int byteIndex = cell / 8;
+            int bit = cell % 8;
+            int mask = 1 << bit;
+            int raw = rawGrayCells[cell];
+            for (int page = 0; page < 3; page++)
+            {
+                int shift = 2 - page;
+                if (((raw >> shift) & 1) != 0)
+                    pages[page * pageBytes + byteIndex] |= (byte)mask;
+            }
+        }
+
+        File.WriteAllBytes(path, pages);
+    }
+
+}
+
+internal static class AnalysisResultTestExtensions
+{
+    public static double CurvePointValue(this AnalysisResult result, int level, double x)
+    {
+        var xs = result.IncrementCurveXValues[level];
+        var ys = result.IncrementCurves[level];
+        for (int i = 0; i < xs.Length && i < ys.Length; i++)
+        {
+            if (Math.Abs(xs[i] - x) < 0.0001)
+                return ys[i];
+        }
+
+        return 0;
+    }
 }

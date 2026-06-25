@@ -63,6 +63,29 @@
                     </StackPanel>
                 </GroupBox>
 
+                <GroupBox Header="显示平滑" Margin="0,0,0,8">
+                    <Grid Margin="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+                        <CheckBox Grid.Row="0" Grid.ColumnSpan="2"
+                                  Content="SG 平滑"
+                                  IsChecked="{Binding UseSavitzkyGolaySmoothing}"
+                                  Margin="0,2,0,6" />
+                        <TextBlock Grid.Row="1" Grid.Column="0"
+                                   Text="窗口"
+                                   VerticalAlignment="Center" />
+                        <TextBox Grid.Row="1" Grid.Column="1"
+                                 Text="{Binding SavitzkyGolayWindow, UpdateSourceTrigger=PropertyChanged}"
+                                 Margin="8,0,0,0" />
+                    </Grid>
+                </GroupBox>
+
                 <GroupBox Header="模板" Margin="0,0,0,8">
                     <StackPanel Margin="8" Orientation="Horizontal">
                         <Button Content="保存" Width="70" Margin="0,0,4,0"

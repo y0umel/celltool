@@ -30,6 +30,21 @@ public class LevelSpacingSuggestionInfo
     public int SampleCount { get; init; }
     public double MedianGapCode { get; init; }
     public double MaxDeviationCode { get; init; }
+    public double StandardDeviationCode { get; init; }
+    public LevelSpacingEstimateInfo[] Items { get; init; } = Array.Empty<LevelSpacingEstimateInfo>();
+}
+
+public class LevelSpacingEstimateInfo
+{
+    public int LevelIndex { get; init; }
+    public string Label { get; init; } = string.Empty;
+    public double SuggestedSpacingCode { get; init; }
+    public int SampleCount { get; init; }
+    public double MedianGapCode { get; init; }
+    public double MaxDeviationCode { get; init; }
+    public double StandardDeviationCode { get; init; }
+    public double Confidence { get; init; }
+    public string ConfidenceLabel { get; init; } = string.Empty;
 }
 
 public class DistributionIntegralInfo
