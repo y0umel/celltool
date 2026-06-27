@@ -38,11 +38,12 @@ public class RealDataRegressionTests
             Assert.InRange(integral.SourceCellCount, 15000, 22000);
             Assert.Equal(integral.RawObservedIntegral, integral.DisplayObservedIntegral);
             Assert.InRange(
-                integral.DisplayObservedIntegral + integral.LeftOutOfRangeEstimate + integral.RightOutOfRangeEstimate,
+                integral.DisplayObservedIntegral + integral.LeftOutOfRangeEstimate + integral.RightOutOfRangeEstimate + integral.UnclassifiedOutOfRangeEstimate,
                 integral.SourceCellCount - 100,
                 integral.SourceCellCount + 100);
             Assert.True(integral.LeftOutOfRangeEstimate >= 0);
             Assert.True(integral.RightOutOfRangeEstimate >= 0);
+            Assert.True(integral.UnclassifiedOutOfRangeEstimate >= 0);
         });
 
         for (int level = 1; level < result.StatePeaks.Length; level++)

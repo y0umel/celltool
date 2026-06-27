@@ -443,4 +443,27 @@ public class ParserAndAnalyzerTests
         Assert.Null(state.CodewordsPerPage);
         Assert.Equal(string.Empty, state.TlcWlEncoding);
     }
+
+    [Fact]
+    public void AppState_PersistsTransitionDetectionModeThroughAnalysisConfig()
+    {
+        var state = new AppState
+        {
+            TransitionDetectionMode = TransitionDetectionMode.BayesianChangePoint
+        };
+
+        var config = state.CreateAnalysisConfig();
+
+        Assert.Equal(TransitionDetectionMode.BayesianChangePoint, config.TransitionDetectionMode);
+
+        state.ApplyConfiguration(new AppConfiguration
+        {
+            Analysis = new AnalysisConfig
+            {
+                TransitionDetectionMode = TransitionDetectionMode.StepFit
+            }
+        });
+
+        Assert.Equal(TransitionDetectionMode.StepFit, state.TransitionDetectionMode);
+    }
 }

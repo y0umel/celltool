@@ -54,7 +54,12 @@ public class CsvExporterTests
                         RawObservedIntegral = 8,
                         DisplayObservedIntegral = 8,
                         LeftOutOfRangeEstimate = 0,
-                        RightOutOfRangeEstimate = 0
+                        RightOutOfRangeEstimate = 0,
+                        UnclassifiedOutOfRangeEstimate = 5,
+                        LeftBoundaryObservedCount = 1,
+                        RightBoundaryObservedCount = 2,
+                        BothBoundaryObservedCount = 3,
+                        EndpointObservedCount = 4
                     }
                 ]
             };
@@ -69,7 +74,8 @@ public class CsvExporterTests
             Assert.Contains("L间距分组,最终间距Code,样本数", csv);
             Assert.Contains("L1,84.00,3,84.00,4.00,2.00,高", csv);
             Assert.Contains("未裁剪观测积分,显示曲线积分,裁剪损失", csv);
-            Assert.Contains("L0,8,8.00,8.00,0.00", csv);
+            Assert.Contains("左边界观测数,右边界观测数,双边观测数,端点观测数", csv);
+            Assert.Contains("L0,8,8.00,8.00,0.00,0.00,0.00,5.00,0.00,0.00,1,2,3,4", csv);
             Assert.DoesNotContain("间距拟合", csv);
         }
         finally

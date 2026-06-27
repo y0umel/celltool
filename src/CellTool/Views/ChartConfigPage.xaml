@@ -60,6 +60,8 @@
                                   IsChecked="{Binding ShowReadVoltage}" Margin="0,2" />
                         <CheckBox Content="显示图例"
                                   IsChecked="{Binding ShowLegend}" Margin="0,2" />
+                        <CheckBox Content="显示峰顶 offset"
+                                  IsChecked="{Binding ShowPeakOffsetAnnotations}" Margin="0,2" />
                     </StackPanel>
                 </GroupBox>
 

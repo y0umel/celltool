@@ -141,6 +141,31 @@ public partial class HomeViewModel : ObservableObject
     public ObservableCollection<string> AvailableManufacturers => state.AvailableManufacturers;
     public ObservableCollection<ChipInfo> AvailableChips => state.AvailableChips;
 
+    public IReadOnlyList<TransitionDetectionModeOption> TransitionDetectionModeOptions { get; } =
+    [
+        new(TransitionDetectionMode.SlidingWindow, "滑动窗口", "当前稳定长度/support 逻辑"),
+        new(TransitionDetectionMode.StepFit, "阶跃拟合", "测试入口，当前回退到滑动窗口"),
+        new(TransitionDetectionMode.BayesianChangePoint, "贝叶斯变点", "测试入口，当前回退到滑动窗口")
+    ];
+
+    public TransitionDetectionModeOption? SelectedTransitionDetectionMode
+    {
+        get => TransitionDetectionModeOptions.FirstOrDefault(option => option.Mode == state.TransitionDetectionMode)
+               ?? TransitionDetectionModeOptions[0];
+        set
+        {
+            if (value is null || state.TransitionDetectionMode == value.Mode)
+                return;
+
+            state.TransitionDetectionMode = value.Mode;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TransitionDetectionModeDescription));
+        }
+    }
+
+    public string TransitionDetectionModeDescription =>
+        SelectedTransitionDetectionMode?.Description ?? string.Empty;
+
     public string ChipStatus => state.SelectedChip is null
         ? "未选择芯片"
         : $"{state.SelectedChip.Manufacturer} / {state.SelectedChip.DieName} - {state.SelectedChip.Type}, {FormatOptional(state.SelectedChip.PageTotalBytes)} B/page, {FormatOptional(state.SelectedChip.CodewordBytes)} B/CW, WL/Block {FormatOptional(state.SelectedChip.WlPerBlock)}, WL编码 {FormatEncoding(state.SelectedChip.WlEncoding)}";
@@ -191,6 +216,10 @@ public partial class HomeViewModel : ObservableObject
                 break;
             case nameof(AppState.SelectedDieName):
                 OnPropertyChanged(nameof(ChipStatus));
+                break;
+            case nameof(AppState.TransitionDetectionMode):
+                OnPropertyChanged(nameof(SelectedTransitionDetectionMode));
+                OnPropertyChanged(nameof(TransitionDetectionModeDescription));
                 break;
         }
     }
@@ -243,6 +272,7 @@ public partial class HomeViewModel : ObservableObject
         try
         {
             var config = state.CreateAnalysisConfig();
+            Log($"使用 {state.SelectedChip.Type} 手动L间距: {config.GetLevelSpacingMv(state.SelectedChip.Type):F2} code。");
             var scan = voltageFileReader.ScanDirectoryDetailed(
                 config.InputDirectory,
                 config.VoltageMinMv,
@@ -331,3 +361,8 @@ public partial class HomeViewModel : ObservableObject
         chartRenderer.SavePng(chartPath, result, state.ChartConfig);
     }
 }
+
+public sealed record TransitionDetectionModeOption(
+    TransitionDetectionMode Mode,
+    string DisplayName,
+    string Description);

@@ -60,6 +60,9 @@ public partial class ChartConfigViewModel : ObservableObject
     private bool _showLegend = true;
 
     [ObservableProperty]
+    private bool _showPeakOffsetAnnotations;
+
+    [ObservableProperty]
     private bool _useSavitzkyGolaySmoothing = true;
 
     [ObservableProperty]
@@ -89,6 +92,7 @@ public partial class ChartConfigViewModel : ObservableObject
     partial void OnShowBoundaryLinesChanged(bool value) => SaveAndRefresh();
     partial void OnShowReadVoltageChanged(bool value) => SaveAndRefresh();
     partial void OnShowLegendChanged(bool value) => SaveAndRefresh();
+    partial void OnShowPeakOffsetAnnotationsChanged(bool value) => SaveAndRefresh();
     partial void OnUseSavitzkyGolaySmoothingChanged(bool value) => SaveAndRefresh();
     partial void OnSavitzkyGolayWindowChanged(int value) => SaveAndRefresh();
 
@@ -175,6 +179,7 @@ public partial class ChartConfigViewModel : ObservableObject
             ShowBoundaryLines = ShowBoundaryLines,
             ShowReadVoltage = ShowReadVoltage,
             ShowLegend = ShowLegend,
+            ShowPeakOffsetAnnotations = ShowPeakOffsetAnnotations,
             UseSavitzkyGolaySmoothing = UseSavitzkyGolaySmoothing,
             SavitzkyGolayWindow = SavitzkyGolayWindow
         };
@@ -195,6 +200,7 @@ public partial class ChartConfigViewModel : ObservableObject
             ShowBoundaryLines = config.ShowBoundaryLines;
             ShowReadVoltage = config.ShowReadVoltage;
             ShowLegend = config.ShowLegend;
+            ShowPeakOffsetAnnotations = config.ShowPeakOffsetAnnotations;
             UseSavitzkyGolaySmoothing = config.UseSavitzkyGolaySmoothing;
             SavitzkyGolayWindow = config.SavitzkyGolayWindow;
         }

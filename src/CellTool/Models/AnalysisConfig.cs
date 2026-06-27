@@ -29,6 +29,7 @@ public class AnalysisConfig
     public string MlcWlEncoding { get; set; } = string.Empty;
     public string TlcWlEncoding { get; set; } = string.Empty;
     public string QlcWlEncoding { get; set; } = string.Empty;
+    public TransitionDetectionMode TransitionDetectionMode { get; set; } = TransitionDetectionMode.SlidingWindow;
 
     public int? PageTotalBytes =>
         PageDataBytes.HasValue && PageRedundantBytes.HasValue

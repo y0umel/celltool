@@ -90,7 +90,8 @@ public class AnalysisEngine
                 bitsPerCell,
                 chip.StateCount,
                 cellCount,
-                config.GrayCodeOrder);
+                config.GrayCodeOrder,
+                NormalizeTransitionDetectionMode(config.TransitionDetectionMode));
         }
 
         progress?.Report((0.72, "Reconstructing Vt distributions..."));
@@ -235,7 +236,8 @@ public class AnalysisEngine
         int cellCount,
         int stateCount,
         double levelSpacingMv,
-        string grayCodeOrder = "U-M-L")
+        string grayCodeOrder = "U-M-L",
+        TransitionDetectionMode transitionDetectionMode = TransitionDetectionMode.SlidingWindow)
     {
         return ReconstructSourceLevelErrorDistributions(
             rawGrayPerVoltage,
@@ -248,7 +250,8 @@ public class AnalysisEngine
             cellCount,
             stateCount,
             levelSpacingMv,
-            grayCodeOrder);
+            grayCodeOrder,
+            NormalizeTransitionDetectionMode(transitionDetectionMode));
     }
 
     private static void AccumulateDirectLevelDistributionsForWl(
@@ -260,7 +263,8 @@ public class AnalysisEngine
         int bitsPerCell,
         int stateCount,
         int cellCount,
-        string grayCodeOrder)
+        string grayCodeOrder,
+        TransitionDetectionMode transitionDetectionMode)
     {
         var levelMap = BuildRawGrayToLevelMap(wlEncoding);
         var descriptors = BuildBitBoundaryDescriptors(wlEncoding, bitsPerCell, grayCodeOrder);
@@ -288,7 +292,8 @@ public class AnalysisEngine
                         sourceRaw,
                         boundary.LeftRawGray,
                         voltageCodes,
-                        neighborOnHighOffsetSide: true);
+                        neighborOnHighOffsetSide: true,
+                        transitionDetectionMode);
                 }
             }
 
@@ -303,41 +308,59 @@ public class AnalysisEngine
                         sourceRaw,
                         boundary.RightRawGray,
                         voltageCodes,
-                        neighborOnHighOffsetSide: false);
+                        neighborOnHighOffsetSide: false,
+                        transitionDetectionMode);
                 }
             }
 
-            if (sourceLevel == 0 && left is null)
+            if (sourceLevel == 0 && left is null && descriptors.Length > 0)
             {
-                endpoint = FindAnySourceExitObservation(
+                endpoint = FindEndpointSourceExitObservation(
                     rawGrayByVoltage,
                     cell,
                     sourceRaw,
                     voltageCodes,
-                    preferSourceToOther: false);
+                    preferSourceToOther: false,
+                    transitionDetectionMode);
             }
-            else if (sourceLevel == stateCount - 1 && right is null)
+            else if (sourceLevel == stateCount - 1 && right is null && descriptors.Length > 0)
             {
-                endpoint = FindAnySourceExitObservation(
+                endpoint = FindEndpointSourceExitObservation(
                     rawGrayByVoltage,
                     cell,
                     sourceRaw,
                     voltageCodes,
-                    preferSourceToOther: true);
+                    preferSourceToOther: true,
+                    transitionDetectionMode);
             }
 
-            double? x = ChooseDirectCellPosition(sourceLevel, accumulator.StateCount, accumulator.SpacingCode, left, right);
-            if (!x.HasValue && endpoint.HasValue)
+            bool hasPlottedComponent = false;
+            if (left.HasValue && sourceLevel > 0)
+            {
+                double x = BoundaryPositionCode(sourceLevel - 1, accumulator.SpacingCode) + left.Value.Offset;
+                accumulator.AddPoint(sourceLevel, RoundCode(x));
+                hasPlottedComponent = true;
+            }
+
+            if (right.HasValue && sourceLevel < stateCount - 1)
+            {
+                double x = BoundaryPositionCode(sourceLevel, accumulator.SpacingCode) + right.Value.Offset;
+                accumulator.AddPoint(sourceLevel, RoundCode(x));
+                hasPlottedComponent = true;
+            }
+
+            if (!hasPlottedComponent && endpoint.HasValue)
             {
                 double boundaryCode = sourceLevel == 0
                     ? BoundaryPositionCode(0, accumulator.SpacingCode)
                     : BoundaryPositionCode(stateCount - 2, accumulator.SpacingCode);
-                x = RoundCode(boundaryCode + endpoint.Value.Offset);
+                accumulator.AddPoint(sourceLevel, RoundCode(boundaryCode + endpoint.Value.Offset));
+                hasPlottedComponent = true;
             }
 
-            if (x.HasValue)
+            if (hasPlottedComponent)
             {
-                accumulator.AddPoint(sourceLevel, x.Value);
+                accumulator.AddSource(sourceLevel, ClassifyObservationSource(left, right, endpoint));
             }
             else if (sourceLevel == 0)
             {
@@ -349,7 +372,13 @@ public class AnalysisEngine
             }
             else
             {
-                accumulator.RightOutOfRange[sourceLevel]++;
+                AddInternalOutOfRange(
+                    accumulator,
+                    sourceLevel,
+                    rawGrayByVoltage,
+                    cell,
+                    descriptors,
+                    stateCount);
             }
 
             if (left.HasValue && right.HasValue)
@@ -361,43 +390,60 @@ public class AnalysisEngine
         }
     }
 
-    private static double? ChooseDirectCellPosition(
-        int sourceLevel,
-        int stateCount,
-        double spacingCode,
+    private static LevelObservationSource ClassifyObservationSource(
         DirectTransitionObservation? left,
-        DirectTransitionObservation? right)
+        DirectTransitionObservation? right,
+        DirectTransitionObservation? endpoint)
     {
-        double? leftX = left.HasValue && sourceLevel > 0
-            ? BoundaryPositionCode(sourceLevel - 1, spacingCode) + left.Value.Offset
-            : null;
-        double? rightX = right.HasValue && sourceLevel < stateCount - 1
-            ? BoundaryPositionCode(sourceLevel, spacingCode) + right.Value.Offset
-            : null;
+        if (left.HasValue && right.HasValue)
+            return LevelObservationSource.BothBoundaries;
+        if (left.HasValue)
+            return LevelObservationSource.LeftBoundary;
+        if (right.HasValue)
+            return LevelObservationSource.RightBoundary;
+        if (endpoint.HasValue)
+            return LevelObservationSource.Endpoint;
 
-        if (leftX.HasValue && rightX.HasValue)
+        return LevelObservationSource.None;
+    }
+
+    private static void AddInternalOutOfRange(
+        DirectLevelDistributionAccumulator accumulator,
+        int sourceLevel,
+        int[][] rawGrayByVoltage,
+        int cell,
+        BitBoundaryDescriptor[] descriptors,
+        int stateCount)
+    {
+        int count = rawGrayByVoltage.Length;
+        if (count == 0 ||
+            sourceLevel <= 0 ||
+            sourceLevel >= stateCount - 1 ||
+            sourceLevel - 1 >= descriptors.Length ||
+            sourceLevel >= descriptors.Length)
         {
-            if (left!.Value.Support != right!.Value.Support)
-                return left.Value.Support > right.Value.Support
-                    ? RoundCode(leftX.Value)
-                    : RoundCode(rightX.Value);
-
-            double levelCenter = sourceLevel == 0
-                ? 0
-                : sourceLevel == stateCount - 1
-                    ? BoundaryPositionCode(stateCount - 2, spacingCode)
-                    : BoundaryPositionCode(sourceLevel - 1, spacingCode) + spacingCode / 2.0;
-            return Math.Abs(leftX.Value - levelCenter) <= Math.Abs(rightX.Value - levelCenter)
-                ? RoundCode(leftX.Value)
-                : RoundCode(rightX.Value);
+            accumulator.UnclassifiedOutOfRange[sourceLevel]++;
+            return;
         }
 
-        if (leftX.HasValue)
-            return RoundCode(leftX.Value);
-        if (rightX.HasValue)
-            return RoundCode(rightX.Value);
+        var leftBoundary = descriptors[sourceLevel - 1];
+        var rightBoundary = descriptors[sourceLevel];
+        int lowRaw = rawGrayByVoltage[0][cell];
+        int highRaw = rawGrayByVoltage[count - 1][cell];
 
-        return null;
+        if (leftBoundary.IsValid && lowRaw == leftBoundary.LeftRawGray)
+        {
+            accumulator.LeftOutOfRange[sourceLevel]++;
+            return;
+        }
+
+        if (rightBoundary.IsValid && highRaw == rightBoundary.RightRawGray)
+        {
+            accumulator.RightOutOfRange[sourceLevel]++;
+            return;
+        }
+
+        accumulator.UnclassifiedOutOfRange[sourceLevel]++;
     }
 
     private static DirectTransitionObservation? FindDirectTransitionObservation(
@@ -406,12 +452,37 @@ public class AnalysisEngine
         int sourceRawGray,
         int neighborRawGray,
         double[] voltageCodes,
-        bool neighborOnHighOffsetSide)
+        bool neighborOnHighOffsetSide,
+        TransitionDetectionMode transitionDetectionMode)
     {
+        transitionDetectionMode = NormalizeTransitionDetectionMode(transitionDetectionMode);
+        if (transitionDetectionMode == TransitionDetectionMode.StepFit ||
+            transitionDetectionMode == TransitionDetectionMode.BayesianChangePoint)
+        {
+            var modeledPreferred = FindModeledTransitionObservation(
+                rawGrayByVoltage,
+                cell,
+                sourceRawGray,
+                neighborRawGray,
+                voltageCodes,
+                neighborOnHighOffsetSide,
+                transitionDetectionMode);
+            if (modeledPreferred.HasValue)
+                return modeledPreferred;
+
+            return FindModeledTransitionObservation(
+                rawGrayByVoltage,
+                cell,
+                sourceRawGray,
+                neighborRawGray,
+                voltageCodes,
+                !neighborOnHighOffsetSide,
+                transitionDetectionMode);
+        }
+
         int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
         DirectTransitionObservation? preferred = null;
         DirectTransitionObservation? fallback = null;
-
         for (int v = 1; v < count; v++)
         {
             int previous = rawGrayByVoltage[v - 1][cell];
@@ -429,48 +500,282 @@ public class AnalysisEngine
             var candidate = new DirectTransitionObservation(voltageCodes[v], support);
             bool isPreferredDirection = neighborOnHighOffsetSide ? sourceToNeighbor : neighborToSource;
             if (isPreferredDirection)
-                preferred = BetterTransitionCandidate(preferred, candidate);
+                preferred = ChooseTransitionCandidate(preferred, candidate, transitionDetectionMode);
             else
-                fallback = BetterTransitionCandidate(fallback, candidate);
+                fallback = ChooseTransitionCandidate(fallback, candidate, transitionDetectionMode);
         }
 
         return preferred ?? fallback;
     }
 
-    private static DirectTransitionObservation? FindAnySourceExitObservation(
+    private static DirectTransitionObservation? FindModeledTransitionObservation(
+        int[][] rawGrayByVoltage,
+        int cell,
+        int sourceRawGray,
+        int neighborRawGray,
+        double[] voltageCodes,
+        bool sourceBeforeTarget,
+        TransitionDetectionMode mode)
+    {
+        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
+        if (count < 2)
+            return null;
+
+        var sides = new TransitionSide[count];
+        bool hasSource = false;
+        bool hasTarget = false;
+        for (int v = 0; v < count; v++)
+        {
+            int raw = rawGrayByVoltage[v][cell];
+            if (raw == sourceRawGray)
+            {
+                sides[v] = sourceBeforeTarget ? TransitionSide.Source : TransitionSide.Target;
+                hasSource = true;
+            }
+            else if (raw == neighborRawGray)
+            {
+                sides[v] = sourceBeforeTarget ? TransitionSide.Target : TransitionSide.Source;
+                hasTarget = true;
+            }
+            else
+            {
+                sides[v] = TransitionSide.Other;
+            }
+        }
+
+        if (!hasSource || !hasTarget)
+            return null;
+
+        return mode switch
+        {
+            TransitionDetectionMode.StepFit => FitStepTransition(sides, voltageCodes, count),
+            TransitionDetectionMode.BayesianChangePoint => FitBayesianTransition(sides, voltageCodes, count),
+            _ => null
+        };
+    }
+
+    private static DirectTransitionObservation? FitStepTransition(
+        TransitionSide[] sides,
+        double[] voltageCodes,
+        int count)
+    {
+        double bestCost = double.PositiveInfinity;
+        double secondBestCost = double.PositiveInfinity;
+        int bestSplit = -1;
+
+        for (int split = 1; split < count; split++)
+        {
+            double cost = StepFitCost(sides, split, count);
+            if (cost < bestCost ||
+                (Math.Abs(cost - bestCost) < 1e-9 && IsCloserToZero(voltageCodes, split, bestSplit)))
+            {
+                secondBestCost = bestCost;
+                bestCost = cost;
+                bestSplit = split;
+            }
+            else if (cost < secondBestCost)
+            {
+                secondBestCost = cost;
+            }
+        }
+
+        if (bestSplit < 0)
+            return null;
+
+        int support = ConfidenceFromCostGap(bestCost, secondBestCost);
+        return new DirectTransitionObservation(voltageCodes[bestSplit], support);
+    }
+
+    private static double StepFitCost(TransitionSide[] sides, int split, int count)
+    {
+        double cost = 0;
+        for (int i = 0; i < count; i++)
+        {
+            bool left = i < split;
+            cost += sides[i] switch
+            {
+                TransitionSide.Source => left ? 0 : 4,
+                TransitionSide.Target => left ? 4 : 0,
+                _ => 1
+            };
+        }
+
+        int start = Math.Max(1, split - 3);
+        int end = Math.Min(count - 1, split + 3);
+        for (int i = start; i <= end; i++)
+        {
+            if (sides[i - 1] != TransitionSide.Other &&
+                sides[i] != TransitionSide.Other &&
+                sides[i - 1] != sides[i])
+            {
+                cost += 2;
+            }
+        }
+
+        return cost;
+    }
+
+    private static DirectTransitionObservation? FitBayesianTransition(
+        TransitionSide[] sides,
+        double[] voltageCodes,
+        int count)
+    {
+        const double correctProbability = 0.96;
+        const double wrongProbability = 0.03;
+        const double otherProbability = 0.01;
+        double logCorrect = -Math.Log(correctProbability);
+        double logWrong = -Math.Log(wrongProbability);
+        double logOther = -Math.Log(otherProbability);
+
+        double bestCost = double.PositiveInfinity;
+        double secondBestCost = double.PositiveInfinity;
+        int bestSplit = -1;
+        for (int split = 1; split < count; split++)
+        {
+            double cost = 0;
+            for (int i = 0; i < count; i++)
+            {
+                bool left = i < split;
+                cost += sides[i] switch
+                {
+                    TransitionSide.Source => left ? logCorrect : logWrong,
+                    TransitionSide.Target => left ? logWrong : logCorrect,
+                    _ => logOther
+                };
+            }
+
+            if (cost < bestCost ||
+                (Math.Abs(cost - bestCost) < 1e-9 && IsCloserToZero(voltageCodes, split, bestSplit)))
+            {
+                secondBestCost = bestCost;
+                bestCost = cost;
+                bestSplit = split;
+            }
+            else if (cost < secondBestCost)
+            {
+                secondBestCost = cost;
+            }
+        }
+
+        if (bestSplit < 0)
+            return null;
+
+        int support = ConfidenceFromCostGap(bestCost, secondBestCost);
+        return new DirectTransitionObservation(voltageCodes[bestSplit], support);
+    }
+
+    private static bool IsCloserToZero(double[] voltageCodes, int candidateIndex, int currentIndex)
+    {
+        if (currentIndex < 0)
+            return true;
+
+        return Math.Abs(voltageCodes[candidateIndex]) < Math.Abs(voltageCodes[currentIndex]);
+    }
+
+    private static int ConfidenceFromCostGap(double bestCost, double secondBestCost)
+    {
+        if (double.IsPositiveInfinity(secondBestCost))
+            return 1;
+
+        return Math.Max(1, (int)Math.Round(secondBestCost - bestCost));
+    }
+
+    private static DirectTransitionObservation? ChooseTransitionCandidate(
+        DirectTransitionObservation? current,
+        DirectTransitionObservation candidate,
+        TransitionDetectionMode mode)
+    {
+        return mode switch
+        {
+            TransitionDetectionMode.SlidingWindow => BetterTransitionCandidate(current, candidate),
+            TransitionDetectionMode.StepFit => BetterTransitionCandidate(current, candidate),
+            TransitionDetectionMode.BayesianChangePoint => BetterTransitionCandidate(current, candidate),
+            _ => BetterTransitionCandidate(current, candidate)
+        };
+    }
+
+    private static TransitionDetectionMode NormalizeTransitionDetectionMode(TransitionDetectionMode mode) =>
+        Enum.IsDefined(mode) ? mode : TransitionDetectionMode.SlidingWindow;
+
+    private static DirectTransitionObservation? FindEndpointSourceExitObservation(
         int[][] rawGrayByVoltage,
         int cell,
         int sourceRawGray,
         double[] voltageCodes,
-        bool preferSourceToOther)
+        bool preferSourceToOther,
+        TransitionDetectionMode transitionDetectionMode)
     {
-        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
-        DirectTransitionObservation? preferred = null;
-        DirectTransitionObservation? fallback = null;
+        transitionDetectionMode = NormalizeTransitionDetectionMode(transitionDetectionMode);
+        if (transitionDetectionMode == TransitionDetectionMode.StepFit ||
+            transitionDetectionMode == TransitionDetectionMode.BayesianChangePoint)
+        {
+            return FindModeledEndpointObservation(
+                rawGrayByVoltage,
+                cell,
+                sourceRawGray,
+                voltageCodes,
+                preferSourceToOther,
+                transitionDetectionMode);
+        }
 
+        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
         for (int v = 1; v < count; v++)
         {
             int previous = rawGrayByVoltage[v - 1][cell];
             int current = rawGrayByVoltage[v][cell];
             bool sourceToOther = previous == sourceRawGray && current != sourceRawGray;
             bool otherToSource = previous != sourceRawGray && current == sourceRawGray;
-            if (!sourceToOther && !otherToSource)
+            bool matchesDirection = preferSourceToOther ? sourceToOther : otherToSource;
+            if (!matchesDirection)
                 continue;
 
-            int support = sourceToOther
-                ? CountSameBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8) +
-                  CountDifferentForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8)
-                : CountDifferentBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8) +
-                  CountSameForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8);
-            var candidate = new DirectTransitionObservation(voltageCodes[v], support);
-            bool isPreferredDirection = preferSourceToOther ? sourceToOther : otherToSource;
-            if (isPreferredDirection)
-                preferred = BetterTransitionCandidate(preferred, candidate);
-            else
-                fallback = BetterTransitionCandidate(fallback, candidate);
+            int support = preferSourceToOther
+                ? CountSameBackward(rawGrayByVoltage, cell, v - 1, sourceRawGray, count, 8)
+                : CountSameForward(rawGrayByVoltage, cell, v, sourceRawGray, count, 8);
+            return new DirectTransitionObservation(voltageCodes[v], support);
         }
 
-        return preferred ?? fallback;
+        return null;
+    }
+
+    private static DirectTransitionObservation? FindModeledEndpointObservation(
+        int[][] rawGrayByVoltage,
+        int cell,
+        int sourceRawGray,
+        double[] voltageCodes,
+        bool sourceBeforeTarget,
+        TransitionDetectionMode mode)
+    {
+        int count = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
+        if (count < 2)
+            return null;
+
+        var sides = new TransitionSide[count];
+        bool hasSource = false;
+        bool hasTarget = false;
+        for (int v = 0; v < count; v++)
+        {
+            if (rawGrayByVoltage[v][cell] == sourceRawGray)
+            {
+                sides[v] = sourceBeforeTarget ? TransitionSide.Source : TransitionSide.Target;
+                hasSource = true;
+            }
+            else
+            {
+                sides[v] = sourceBeforeTarget ? TransitionSide.Target : TransitionSide.Source;
+                hasTarget = true;
+            }
+        }
+
+        if (!hasSource || !hasTarget)
+            return null;
+
+        return mode switch
+        {
+            TransitionDetectionMode.StepFit => FitStepTransition(sides, voltageCodes, count),
+            TransitionDetectionMode.BayesianChangePoint => FitBayesianTransition(sides, voltageCodes, count),
+            _ => null
+        };
     }
 
     private static DirectTransitionObservation? BetterTransitionCandidate(
@@ -500,7 +805,8 @@ public class AnalysisEngine
         int cellCount,
         int stateCount,
         double levelSpacingMv,
-        string grayCodeOrder)
+        string grayCodeOrder,
+        TransitionDetectionMode transitionDetectionMode = TransitionDetectionMode.SlidingWindow)
     {
         double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
         var accumulator = new DirectLevelDistributionAccumulator(stateCount, spacingCode);
@@ -529,7 +835,8 @@ public class AnalysisEngine
                 bitsPerCell,
                 stateCount,
                 cellCount,
-                grayCodeOrder);
+                grayCodeOrder,
+                NormalizeTransitionDetectionMode(transitionDetectionMode));
         }
 
         return accumulator.ToResult();
@@ -657,44 +964,6 @@ public class AnalysisEngine
         for (int v = start; v < count && found < limit; v++)
         {
             if (rawGrayPerVoltage[v][cell] != value)
-                break;
-            found++;
-        }
-
-        return found;
-    }
-
-    private static int CountDifferentBackward(
-        int[][] rawGrayPerVoltage,
-        int cell,
-        int start,
-        int value,
-        int count,
-        int limit)
-    {
-        int found = 0;
-        for (int v = start; v >= 0 && found < limit; v--)
-        {
-            if (rawGrayPerVoltage[v][cell] == value)
-                break;
-            found++;
-        }
-
-        return found;
-    }
-
-    private static int CountDifferentForward(
-        int[][] rawGrayPerVoltage,
-        int cell,
-        int start,
-        int value,
-        int count,
-        int limit)
-    {
-        int found = 0;
-        for (int v = start; v < count && found < limit; v++)
-        {
-            if (rawGrayPerVoltage[v][cell] == value)
                 break;
             found++;
         }
@@ -1308,6 +1577,11 @@ internal sealed class DirectLevelDistributionAccumulator
         SourceCounts = new int[stateCount];
         LeftOutOfRange = new double[stateCount];
         RightOutOfRange = new double[stateCount];
+        UnclassifiedOutOfRange = new double[stateCount];
+        LeftBoundaryObserved = new int[stateCount];
+        RightBoundaryObserved = new int[stateCount];
+        BothBoundaryObserved = new int[stateCount];
+        EndpointObserved = new int[stateCount];
         SpacingSamples = Enumerable.Range(0, stateCount)
             .Select(_ => new List<double>())
             .ToArray();
@@ -1318,6 +1592,11 @@ internal sealed class DirectLevelDistributionAccumulator
     public int[] SourceCounts { get; }
     public double[] LeftOutOfRange { get; }
     public double[] RightOutOfRange { get; }
+    public double[] UnclassifiedOutOfRange { get; }
+    public int[] LeftBoundaryObserved { get; }
+    public int[] RightBoundaryObserved { get; }
+    public int[] BothBoundaryObserved { get; }
+    public int[] EndpointObserved { get; }
     public List<double>[] SpacingSamples { get; }
 
     public void AddPoint(int level, double x)
@@ -1329,6 +1608,28 @@ internal sealed class DirectLevelDistributionAccumulator
         histograms[level][rounded] = histograms[level].TryGetValue(rounded, out double current)
             ? current + 1
             : 1;
+    }
+
+    public void AddSource(int level, LevelObservationSource source)
+    {
+        if (level < 0 || level >= StateCount)
+            return;
+
+        switch (source)
+        {
+            case LevelObservationSource.LeftBoundary:
+                LeftBoundaryObserved[level]++;
+                break;
+            case LevelObservationSource.RightBoundary:
+                RightBoundaryObserved[level]++;
+                break;
+            case LevelObservationSource.BothBoundaries:
+                BothBoundaryObserved[level]++;
+                break;
+            case LevelObservationSource.Endpoint:
+                EndpointObserved[level]++;
+                break;
+        }
     }
 
     public SourceLevelDistributionResult ToResult()
@@ -1372,7 +1673,12 @@ internal sealed class DirectLevelDistributionAccumulator
                 RawObservedIntegral = observed,
                 DisplayObservedIntegral = observed,
                 LeftOutOfRangeEstimate = LeftOutOfRange[level],
-                RightOutOfRangeEstimate = RightOutOfRange[level]
+                RightOutOfRangeEstimate = RightOutOfRange[level],
+                UnclassifiedOutOfRangeEstimate = UnclassifiedOutOfRange[level],
+                LeftBoundaryObservedCount = LeftBoundaryObserved[level],
+                RightBoundaryObservedCount = RightBoundaryObserved[level],
+                BothBoundaryObservedCount = BothBoundaryObserved[level],
+                EndpointObservedCount = EndpointObserved[level]
             };
         }
 
@@ -1512,3 +1818,19 @@ internal sealed class DirectLevelDistributionAccumulator
 }
 
 internal readonly record struct DirectTransitionObservation(double Offset, int Support);
+
+internal enum TransitionSide
+{
+    Other,
+    Source,
+    Target
+}
+
+internal enum LevelObservationSource
+{
+    None,
+    LeftBoundary,
+    RightBoundary,
+    BothBoundaries,
+    Endpoint
+}

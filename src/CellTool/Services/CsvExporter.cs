@@ -124,10 +124,10 @@ public class CsvExporter
     private static void AppendDistributionIntegralSection(StringBuilder sb, DistributionIntegralInfo[] integrals)
     {
         sb.AppendLine();
-        sb.AppendLine("Level,源Cell数,未裁剪观测积分,显示曲线积分,裁剪损失,左侧未扫到估计,右侧未扫到估计,未裁剪积分差,显示积分差");
+        sb.AppendLine("Level,源Cell数,未裁剪观测积分,显示曲线积分,裁剪损失,左侧未扫到估计,右侧未扫到估计,未分类未观测估计,未裁剪积分差,显示积分差,左边界观测数,右边界观测数,双边观测数,端点观测数");
         if (integrals.Length == 0)
         {
-            sb.AppendLine("未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算");
+            sb.AppendLine("未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算,未计算");
             return;
         }
 
@@ -141,8 +141,13 @@ public class CsvExporter
                 $"{item.ClippedIntegral:F2}," +
                 $"{item.LeftOutOfRangeEstimate:F2}," +
                 $"{item.RightOutOfRangeEstimate:F2}," +
+                $"{item.UnclassifiedOutOfRangeEstimate:F2}," +
                 $"{item.RawIntegralDeltaFromSource:F2}," +
-                $"{item.DisplayIntegralDeltaFromSource:F2}");
+                $"{item.DisplayIntegralDeltaFromSource:F2}," +
+                $"{item.LeftBoundaryObservedCount}," +
+                $"{item.RightBoundaryObservedCount}," +
+                $"{item.BothBoundaryObservedCount}," +
+                $"{item.EndpointObservedCount}");
         }
     }
 

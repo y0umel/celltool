@@ -56,6 +56,11 @@ public class DistributionIntegralInfo
     public double DisplayObservedIntegral { get; init; }
     public double LeftOutOfRangeEstimate { get; init; }
     public double RightOutOfRangeEstimate { get; init; }
+    public double UnclassifiedOutOfRangeEstimate { get; init; }
+    public int LeftBoundaryObservedCount { get; init; }
+    public int RightBoundaryObservedCount { get; init; }
+    public int BothBoundaryObservedCount { get; init; }
+    public int EndpointObservedCount { get; init; }
     public double ClippedIntegral => Math.Max(0, RawObservedIntegral - DisplayObservedIntegral);
     public double RawIntegralDeltaFromSource => RawObservedIntegral - SourceCellCount;
     public double DisplayIntegralDeltaFromSource => DisplayObservedIntegral - SourceCellCount;

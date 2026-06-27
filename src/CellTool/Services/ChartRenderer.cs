@@ -310,8 +310,119 @@ public class ChartRenderer
             }
         }
 
+        if (chartConfig.ShowPeakOffsetAnnotations)
+            AddPeakOffsetAnnotations(plot, result);
+
         if (chartConfig.ShowLegend)
             plot.ShowLegend(Edge.Right);
+    }
+
+    private static void AddPeakOffsetAnnotations(Plot plot, AnalysisResult result)
+    {
+        var annotations = BuildPeakOffsetAnnotations(result);
+        foreach (var annotation in annotations)
+        {
+            var color = Color.FromHex(annotation.ColorHex);
+            var marker = plot.Add.Marker(annotation.PeakX, annotation.PeakY);
+            marker.Color = color;
+            marker.MarkerSize = 6;
+            marker.Shape = MarkerShape.FilledCircle;
+
+            foreach (var readX in annotation.ReadXs)
+            {
+                var line = plot.Add.Line(readX, annotation.PeakY, annotation.PeakX, annotation.PeakY);
+                line.Color = color;
+                line.LinePattern = LinePattern.Dotted;
+                line.LineWidth = 1;
+            }
+
+            double yOffset = Math.Max(20, annotation.PeakY * 0.08);
+            var text = plot.Add.Text(annotation.Label, annotation.PeakX, annotation.PeakY + yOffset);
+            text.LabelFontColor = color;
+            text.LabelFontSize = 12;
+            text.Alignment = Alignment.LowerCenter;
+        }
+    }
+
+    internal static IReadOnlyList<PeakOffsetAnnotation> BuildPeakOffsetAnnotations(AnalysisResult result)
+    {
+        int stateCount = result.StateCount > 0 ? result.StateCount : result.IncrementCurves.Length;
+        if (stateCount <= 1)
+            return Array.Empty<PeakOffsetAnnotation>();
+
+        double spacing = EstimateReadSpacing(result);
+        var annotations = new List<PeakOffsetAnnotation>();
+        for (int level = 0; level < result.IncrementCurves.Length && level < stateCount; level++)
+        {
+            var ys = result.IncrementCurves[level];
+            var xs = GetCurveXValues(result, ChartAxisMapper.ToDisplayVoltageBins(result.VoltageCodes), level, ys.Length);
+            if (ys.Length == 0 || xs.Length == 0)
+                continue;
+
+            int peakIndex = FindPeakIndex(ys);
+            if (peakIndex < 0 || peakIndex >= xs.Length)
+                continue;
+
+            double peakX = xs[peakIndex];
+            double peakY = ys[peakIndex];
+            if (peakY <= 0)
+                continue;
+
+            var readXs = AdjacentReadXs(level, stateCount, spacing).ToArray();
+            if (readXs.Length == 0)
+                continue;
+
+            string label = string.Join("  ", readXs.Select(readX =>
+            {
+                int readIndex = (int)Math.Round(readX / spacing) + 1;
+                double offset = peakX - readX;
+                return $"R{readIndex} {offset:+0;-0;0}";
+            }));
+
+            annotations.Add(new PeakOffsetAnnotation(
+                Level: level,
+                PeakX: peakX,
+                PeakY: peakY,
+                ReadXs: readXs,
+                Label: label,
+                ColorHex: level < DefaultColors.Length ? DefaultColors[level] : DefaultColors[^1]));
+        }
+
+        return annotations;
+    }
+
+    private static IEnumerable<double> AdjacentReadXs(int level, int stateCount, double spacing)
+    {
+        if (level <= 0)
+        {
+            yield return 0;
+            yield break;
+        }
+
+        if (level >= stateCount - 1)
+        {
+            yield return (stateCount - 2) * spacing;
+            yield break;
+        }
+
+        yield return (level - 1) * spacing;
+        yield return level * spacing;
+    }
+
+    private static int FindPeakIndex(double[] values)
+    {
+        int peakIndex = -1;
+        double peakValue = 0;
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (values[i] > peakValue)
+            {
+                peakValue = values[i];
+                peakIndex = i;
+            }
+        }
+
+        return peakIndex;
     }
 
     private static void ConfigureToolStylePlot(Plot plot, string title, string yLabel, bool logScale)
@@ -439,6 +550,14 @@ public class ChartRenderer
     }
 
     private readonly record struct ReadValley(int BoundaryIndex, double X);
+
+    internal readonly record struct PeakOffsetAnnotation(
+        int Level,
+        double PeakX,
+        double PeakY,
+        double[] ReadXs,
+        string Label,
+        string ColorHex);
 
     private static void DrawLimitMissTable(string filePath, IReadOnlyList<LimitMissStat> stats)
     {

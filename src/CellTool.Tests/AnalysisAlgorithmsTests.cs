@@ -251,6 +251,277 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void ReconstructSourceLevelDistributions_OverlaysBothAdjacentDirectBoundaries()
+    {
+        int[][] rawGrayStates =
+        [
+            [0],
+            [4],
+            [4],
+            [6],
+            [4]
+        ];
+        int[] sourceBaseline = [4];
+        double[] voltageCodes = [-40, -20, 0, 40, 60];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        Assert.Equal(2, result.Integrals[2].DisplayObservedIntegral);
+        Assert.Equal([120, 140], result.XValues[2]);
+        Assert.Equal([1, 1], result.Curves[2]);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_OverlaysAdjacentBoundariesWithoutConfidenceAveraging()
+    {
+        int[][] rawGrayStates =
+        [
+            [0],
+            [0],
+            [0],
+            [4],
+            [6],
+            [4]
+        ];
+        int[] sourceBaseline = [4];
+        double[] voltageCodes = [-60, -40, -20, 0, 40, 60];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        Assert.Equal([120, 160], result.XValues[2]);
+        Assert.Equal([1, 1], result.Curves[2]);
+        Assert.Equal(2, result.Integrals[2].DisplayObservedIntegral);
+        Assert.Equal(1, result.Integrals[2].BothBoundaryObservedCount);
+    }
+
+    [Fact]
+    public void ReconstructSourceLevelDistributions_ManualSpacingChangesBoundaryComponentSeparation()
+    {
+        int[][] rawGrayStates =
+        [
+            [0],
+            [4],
+            [4],
+            [4],
+            [4],
+            [6],
+            [4]
+        ];
+        int[] sourceBaseline = [4];
+        double[] voltageCodes = [-80, -60, -40, -20, 0, 20, 40];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var overlapped = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        var separated = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 120);
+
+        Assert.Equal([100], overlapped.XValues[2]);
+        Assert.Equal([2], overlapped.Curves[2]);
+        Assert.Equal([140, 180], separated.XValues[2]);
+        Assert.Equal([1, 1], separated.Curves[2]);
+    }
+
+    [Theory]
+    [InlineData(TransitionDetectionMode.StepFit)]
+    [InlineData(TransitionDetectionMode.BayesianChangePoint)]
+    public void ReconstructSourceLevelDistributions_ModeledTransitionIgnoresSinglePointSpike(
+        TransitionDetectionMode mode)
+    {
+        int[][] rawGrayStates =
+        [
+            [6],
+            [6],
+            [7],
+            [6],
+            [6],
+            [7],
+            [7],
+            [7]
+        ];
+        int[] sourceBaseline = [6];
+        double[] voltageCodes = [-30, -20, -10, 0, 10, 20, 30, 40];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80,
+            transitionDetectionMode: mode);
+
+        Assert.Equal([20], result.XValues[1]);
+        Assert.Equal([1], result.Curves[1]);
+        Assert.Equal(1, result.Integrals[1].DisplayObservedIntegral);
+    }
+
+    [Theory]
+    [InlineData(TransitionDetectionMode.StepFit)]
+    [InlineData(TransitionDetectionMode.BayesianChangePoint)]
+    public void ReconstructSourceLevelDistributions_ModeledTransitionReturnsUnclassifiedWhenNoBoundaryEvidence(
+        TransitionDetectionMode mode)
+    {
+        int[][] rawGrayStates =
+        [
+            [6],
+            [6],
+            [6],
+            [6]
+        ];
+        int[] sourceBaseline = [6];
+        double[] voltageCodes = [-20, 0, 20, 40];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80,
+            transitionDetectionMode: mode);
+
+        Assert.Empty(result.XValues[1]);
+        Assert.Equal(0, result.Integrals[1].LeftOutOfRangeEstimate);
+        Assert.Equal(0, result.Integrals[1].RightOutOfRangeEstimate);
+        Assert.Equal(1, result.Integrals[1].UnclassifiedOutOfRangeEstimate);
+    }
+
+    [Theory]
+    [InlineData(7, 1, 0, 0)]
+    [InlineData(4, 0, 1, 0)]
+    [InlineData(6, 0, 0, 1)]
+    public void ReconstructSourceLevelDistributions_ClassifiesInternalOutOfRangeOnlyWhenBoundarySideIsKnown(
+        int observedRaw,
+        double expectedLor,
+        double expectedRor,
+        double expectedUnclassified)
+    {
+        int[][] rawGrayStates =
+        [
+            [observedRaw],
+            [observedRaw],
+            [observedRaw]
+        ];
+        int[] sourceBaseline = [6];
+        double[] voltageCodes = [-20, 0, 20];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80);
+
+        Assert.Empty(result.XValues[1]);
+        Assert.Equal(expectedLor, result.Integrals[1].LeftOutOfRangeEstimate);
+        Assert.Equal(expectedRor, result.Integrals[1].RightOutOfRangeEstimate);
+        Assert.Equal(expectedUnclassified, result.Integrals[1].UnclassifiedOutOfRangeEstimate);
+    }
+
+    [Theory]
+    [InlineData(TransitionDetectionMode.StepFit)]
+    [InlineData(TransitionDetectionMode.BayesianChangePoint)]
+    public void ReconstructSourceLevelDistributions_ModeledEndpointIgnoresSinglePointExitNoise(
+        TransitionDetectionMode mode)
+    {
+        int[][] rawGrayStates =
+        [
+            [5],
+            [5],
+            [4],
+            [5],
+            [5],
+            [4],
+            [4],
+            [4]
+        ];
+        int[] sourceBaseline = [5];
+        double[] voltageCodes = [-30, -20, -10, 0, 10, 20, 30, 40];
+        var groupModel = OneTlcWl();
+        var encodings = TlcEncodings();
+
+        var result = AnalysisEngine.ReconstructSourceLevelDistributions(
+            rawGrayStates,
+            sourceBaseline,
+            voltageCodes,
+            voltageCount: voltageCodes.Length,
+            groupModel,
+            encodings,
+            wlCount: 1,
+            cellCount: 1,
+            stateCount: 8,
+            levelSpacingMv: 80,
+            transitionDetectionMode: mode);
+
+        Assert.Equal([500], result.XValues[7]);
+        Assert.Equal(1, result.Integrals[7].EndpointObservedCount);
+    }
+
+    [Fact]
     public void SavitzkyGolayQuadratic_KeepsConstantCurveUnchanged()
     {
         double[] values = [5, 5, 5, 5, 5, 5, 5];
@@ -339,6 +610,69 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
+    public void ChartConfig_DisablesPeakOffsetAnnotationsByDefault()
+    {
+        Assert.False(new ChartConfig().ShowPeakOffsetAnnotations);
+    }
+
+    [Fact]
+    public void PeakOffsetAnnotations_ReportPeakDistanceToAdjacentVreads()
+    {
+        var result = new AnalysisResult
+        {
+            StateCount = 8,
+            VoltageCodes = [0, 1, 2],
+            TransitionLabels = ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7"],
+            IncrementCurves =
+            [
+                [1, 5, 2],
+                [2, 8, 3],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [1, 4, 9]
+            ],
+            IncrementCurveXValues =
+            [
+                [-10, 12, 20],
+                [30, 44, 70],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [520, 548, 567]
+            ],
+            StatePeaks =
+            [
+                new() { StateIndex = 0, AlignmentShiftMv = 0 },
+                new() { StateIndex = 1, AlignmentShiftMv = 80 },
+                new() { StateIndex = 2, AlignmentShiftMv = 160 },
+                new() { StateIndex = 3, AlignmentShiftMv = 240 },
+                new() { StateIndex = 4, AlignmentShiftMv = 320 },
+                new() { StateIndex = 5, AlignmentShiftMv = 400 },
+                new() { StateIndex = 6, AlignmentShiftMv = 480 }
+            ]
+        };
+
+        var annotations = ChartRenderer.BuildPeakOffsetAnnotations(result);
+
+        var l0 = Assert.Single(annotations, a => a.Level == 0);
+        Assert.Equal([0], l0.ReadXs);
+        Assert.Equal("R1 +12", l0.Label);
+
+        var l1 = Assert.Single(annotations, a => a.Level == 1);
+        Assert.Equal([0, 80], l1.ReadXs);
+        Assert.Equal("R1 +44  R2 -36", l1.Label);
+
+        var l7 = Assert.Single(annotations, a => a.Level == 7);
+        Assert.Equal([480], l7.ReadXs);
+        Assert.Equal("R7 +87", l7.Label);
+    }
+
+    [Fact]
     public void ReconstructSourceLevelDistributions_EstimatesOutOfRangeCountsFromCumulativeEdges()
     {
         int[][] rawGrayStates =
@@ -410,8 +744,11 @@ public class AnalysisAlgorithmsTests
         Assert.Equal(8, integral.DisplayObservedIntegral);
     }
 
-    [Fact]
-    public async Task RunAsync_TlcBoundaryComponentsCountsEachCellOnceAndTracksLimits()
+    [Theory]
+    [InlineData(TransitionDetectionMode.SlidingWindow)]
+    [InlineData(TransitionDetectionMode.StepFit)]
+    [InlineData(TransitionDetectionMode.BayesianChangePoint)]
+    public async Task RunAsync_TlcBoundaryComponentsCountsEachCellOnceAndTracksLimits(TransitionDetectionMode mode)
     {
         string root = Path.Combine(Path.GetTempPath(), $"celltool-neighbor-{Guid.NewGuid():N}");
         string input = Path.Combine(root, "offsets");
@@ -439,7 +776,8 @@ public class AnalysisAlgorithmsTests
                 CodewordsPerPage = 1,
                 TlcLevelSpacingMv = 80,
                 GrayCodeOrder = "U-M-L",
-                TlcWlEncoding = "7,6,4,0,2,3,1,5"
+                TlcWlEncoding = "7,6,4,0,2,3,1,5",
+                TransitionDetectionMode = mode
             };
             var chip = new ChipInfo
             {
@@ -464,13 +802,77 @@ public class AnalysisAlgorithmsTests
             Assert.Equal(1, result.DistributionIntegrals[4].SourceCellCount);
             Assert.Equal(0, result.DistributionIntegrals[4].DisplayObservedIntegral);
             Assert.Equal(0, result.DistributionIntegrals[4].LeftOutOfRangeEstimate);
-            Assert.Equal(1, result.DistributionIntegrals[4].RightOutOfRangeEstimate);
+            Assert.Equal(0, result.DistributionIntegrals[4].RightOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[4].UnclassifiedOutOfRangeEstimate);
             Assert.Equal(1, result.DistributionIntegrals[6].SourceCellCount);
             Assert.Equal(0, result.DistributionIntegrals[6].DisplayObservedIntegral);
             Assert.Equal(0, result.DistributionIntegrals[6].LeftOutOfRangeEstimate);
-            Assert.Equal(1, result.DistributionIntegrals[6].RightOutOfRangeEstimate);
+            Assert.Equal(0, result.DistributionIntegrals[6].RightOutOfRangeEstimate);
+            Assert.Equal(1, result.DistributionIntegrals[6].UnclassifiedOutOfRangeEstimate);
             Assert.NotNull(result.LevelSpacingSuggestion);
             Assert.Equal(80, result.LevelSpacingSuggestion.SuggestedSpacingCode);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TlcManualSpacingChangesBoundaryComponentPlacement()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"celltool-spacing-{Guid.NewGuid():N}");
+        string input = Path.Combine(root, "offsets");
+        Directory.CreateDirectory(input);
+        try
+        {
+            const int pageBytes = 1;
+            WriteTlcFile(Path.Combine(root, "source.bin"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-80"), [0], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-60"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-40"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-20"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "0"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "20"), [6], pageBytes);
+            WriteTlcFile(Path.Combine(input, "40"), [4], pageBytes);
+
+            var config = new AnalysisConfig
+            {
+                InputDirectory = input,
+                OutputDirectory = root,
+                ReferenceFilePath = Path.Combine(root, "source.bin"),
+                VoltageMinCode = -80,
+                VoltageMaxCode = 40,
+                VoltageStepCode = 20,
+                WlCount = 1,
+                StartPage = 0,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                CodewordsPerPage = 1,
+                TlcLevelSpacingMv = 80,
+                GrayCodeOrder = "U-M-L",
+                TlcWlEncoding = "7,6,4,0,2,3,1,5"
+            };
+            var chip = new ChipInfo
+            {
+                Type = XlcType.TLC,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            };
+            var groupModel = OneTlcWl();
+
+            var spacing80 = await new AnalysisEngine().RunAsync(config, chip, groupModel);
+            config.TlcLevelSpacingMv = 120;
+            var spacing120 = await new AnalysisEngine().RunAsync(config, chip, groupModel);
+
+            Assert.Equal(80, spacing80.LevelSpacingSuggestion?.CurrentSpacingCode);
+            Assert.Equal(120, spacing120.LevelSpacingSuggestion?.CurrentSpacingCode);
+            Assert.Equal([100], spacing80.IncrementCurveXValues[2]);
+            Assert.Equal([2], spacing80.IncrementCurves[2]);
+            Assert.Equal([140, 180], spacing120.IncrementCurveXValues[2]);
+            Assert.Equal([1, 1], spacing120.IncrementCurves[2]);
         }
         finally
         {

@@ -70,6 +70,9 @@ public partial class AppState : ObservableObject
     private string _qlcWlEncoding = string.Empty;
 
     [ObservableProperty]
+    private TransitionDetectionMode _transitionDetectionMode = TransitionDetectionMode.SlidingWindow;
+
+    [ObservableProperty]
     private string _selectedDieName = string.Empty;
 
     [ObservableProperty]
@@ -126,7 +129,8 @@ public partial class AppState : ObservableObject
             SlcWlEncoding = SlcWlEncoding,
             MlcWlEncoding = MlcWlEncoding,
             TlcWlEncoding = TlcWlEncoding,
-            QlcWlEncoding = QlcWlEncoding
+            QlcWlEncoding = QlcWlEncoding,
+            TransitionDetectionMode = TransitionDetectionMode
         };
     }
 
@@ -160,6 +164,9 @@ public partial class AppState : ObservableObject
         MlcWlEncoding = analysis.MlcWlEncoding;
         TlcWlEncoding = analysis.TlcWlEncoding;
         QlcWlEncoding = analysis.QlcWlEncoding;
+        TransitionDetectionMode = Enum.IsDefined(analysis.TransitionDetectionMode)
+            ? analysis.TransitionDetectionMode
+            : TransitionDetectionMode.SlidingWindow;
         SelectedManufacturer = analysis.Manufacturer;
         SelectedDieName = analysis.DieName;
         IsDarkTheme = configuration.IsDarkTheme;

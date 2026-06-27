@@ -27,6 +27,7 @@
     <Compile Include="../CellTool/Models/GroupModel.cs" Link="CellTool/Models/GroupModel.cs" />
     <Compile Include="../CellTool/Models/LimitMissStat.cs" Link="CellTool/Models/LimitMissStat.cs" />
     <Compile Include="../CellTool/Models/StatePeakInfo.cs" Link="CellTool/Models/StatePeakInfo.cs" />
+    <Compile Include="../CellTool/Models/TransitionDetectionMode.cs" Link="CellTool/Models/TransitionDetectionMode.cs" />
     <Compile Include="../CellTool/Models/VoltageFileInfo.cs" Link="CellTool/Models/VoltageFileInfo.cs" />
     <Compile Include="../CellTool/Services/AnalysisEngine.cs" Link="CellTool/Services/AnalysisEngine.cs" />
     <Compile Include="../CellTool/Services/AppPaths.cs" Link="CellTool/Services/AppPaths.cs" />
