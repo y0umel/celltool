@@ -57,8 +57,8 @@ public class AnalysisEngine
         var voltageCodes = files.Select(f => (double)f.Code).ToArray();
         var modeEncodings = ParseModeEncodings(config, chip);
         int[] groundTruth = Array.Empty<int>();
-        double spacingCode = EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount);
-        var accumulator = new DirectLevelDistributionAccumulator(chip.StateCount, spacingCode);
+        var boundaryPositions = ResolveBoundaryPositions(config, chip.Type, chip.StateCount);
+        var accumulator = new DirectLevelDistributionAccumulator(chip.StateCount, boundaryPositions);
 
         for (int wl = 0; wl < wlCount; wl++)
         {
@@ -68,7 +68,7 @@ public class AnalysisEngine
 
             var entry = groupModel.Entries[wl];
             int bitsPerCell = entry.PageIndices.Length;
-            var grayDecoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
+            var grayDecoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder, config.BitOrder);
             var rawGrayByVoltage = new int[voltageCount][];
 
             for (int v = 0; v < voltageCount; v++)
@@ -81,7 +81,7 @@ public class AnalysisEngine
             var sourceRawGray = !string.IsNullOrWhiteSpace(config.ReferenceFilePath)
                 ? ReadRawGrayBaselineForWl(config.ReferenceFilePath, config, groupModel, modeEncodings, wl, wlCount, pageTotalBytes)
                 : rawGrayByVoltage[0];
-            AccumulateDirectLevelDistributionsForWl(
+            AccumulateCalProcLevelDistributionsForWl(
                 accumulator,
                 rawGrayByVoltage,
                 sourceRawGray,
@@ -138,6 +138,8 @@ public class AnalysisEngine
             ZeroOffsetErrors = zeroErrors,
             IncrementCurves = increments,
             IncrementCurveXValues = curveXValues,
+            DistWlMatrix = reconstructed.DistWlMatrix,
+            DistWlBinCodes = reconstructed.DistWlBinCodes,
             DistributionIntegrals = reconstructed.Integrals,
             ErrorTypeDiagnostics = reconstructed.Diagnostics,
             VoltageCodes = voltageCodes,
@@ -163,7 +165,8 @@ public class AnalysisEngine
             throw new InvalidDataException("Voltage code minimum must be less than or equal to voltage code maximum.");
         if (config.VoltageStepCode <= 0)
             throw new InvalidDataException("Voltage code step must be positive.");
-        if (chip.StateCount > 2 && EffectiveLevelSpacingCode(config.GetLevelSpacingMv(chip.Type), chip.StateCount) <= 0)
+        var validationBoundaryPositions = ResolveBoundaryPositions(config, chip.Type, chip.StateCount);
+        if (chip.StateCount > 2 && validationBoundaryPositions.Length == 0)
             throw new InvalidDataException("L spacing code must be positive for MLC/TLC/QLC reconstruction.");
         if (config.WlCount <= 0)
             throw new InvalidDataException("WL count must be positive.");
@@ -254,6 +257,72 @@ public class AnalysisEngine
             NormalizeTransitionDetectionMode(transitionDetectionMode));
     }
 
+    private static void AccumulateCalProcLevelDistributionsForWl(
+        DirectLevelDistributionAccumulator accumulator,
+        int[][] rawGrayByVoltage,
+        int[] sourceRawGray,
+        double[] voltageCodes,
+        int[] wlEncoding,
+        int bitsPerCell,
+        int stateCount,
+        int cellCount,
+        string grayCodeOrder,
+        TransitionDetectionMode transitionDetectionMode)
+    {
+        // Confirmed calProc table replay; final histogram settlement still uses adjacent Gray transitions.
+        _ = ReplayCalProcState(rawGrayByVoltage, sourceRawGray, voltageCodes, cellCount);
+
+        AccumulateDirectLevelDistributionsForWl(
+            accumulator,
+            rawGrayByVoltage,
+            sourceRawGray,
+            voltageCodes,
+            wlEncoding,
+            bitsPerCell,
+            stateCount,
+            cellCount,
+            grayCodeOrder,
+            transitionDetectionMode);
+    }
+
+    private static CalProcState ReplayCalProcState(
+        int[][] rawGrayByVoltage,
+        int[] sourceRawGray,
+        double[] voltageCodes,
+        int cellCount)
+    {
+        int usableCells = Math.Min(cellCount, sourceRawGray.Length);
+        int scanCount = Math.Min(rawGrayByVoltage.Length, voltageCodes.Length);
+        var state = new CalProcState(usableCells);
+
+        for (int cell = 0; cell < usableCells; cell++)
+            state.Last[cell] = (byte)sourceRawGray[cell];
+
+        for (int scan = 0; scan < scanCount; scan++)
+        {
+            var current = rawGrayByVoltage[scan];
+            int limit = Math.Min(usableCells, current.Length);
+            for (int cell = 0; cell < limit; cell++)
+            {
+                state.RdLogic[cell] = (byte)current[cell];
+                if (state.RdLogic[cell] == state.Last[cell])
+                {
+                    state.MarkStable(cell);
+                    continue;
+                }
+
+                if (state.Stable[cell] == 0)
+                    state.StartWindow(cell, scan);
+                else
+                    state.ExtendWindow(cell, scan);
+
+                state.Last[cell] = state.RdLogic[cell];
+            }
+        }
+
+        return state;
+    }
+
     private static void AccumulateDirectLevelDistributionsForWl(
         DirectLevelDistributionAccumulator accumulator,
         int[][] rawGrayByVoltage,
@@ -276,7 +345,7 @@ public class AnalysisEngine
             if (sourceLevel < 0 || sourceLevel >= stateCount)
                 continue;
 
-            accumulator.SourceCounts[sourceLevel]++;
+            accumulator.AddSourceCell(sourceLevel);
 
             DirectTransitionObservation? left = null;
             DirectTransitionObservation? right = null;
@@ -334,41 +403,27 @@ public class AnalysisEngine
                     transitionDetectionMode);
             }
 
-            bool hasPlottedComponent = false;
-            if (left.HasValue && sourceLevel > 0)
-            {
-                double x = BoundaryPositionCode(sourceLevel - 1, accumulator.SpacingCode) + left.Value.Offset;
-                accumulator.AddPoint(sourceLevel, RoundCode(x));
-                hasPlottedComponent = true;
-            }
-
-            if (right.HasValue && sourceLevel < stateCount - 1)
-            {
-                double x = BoundaryPositionCode(sourceLevel, accumulator.SpacingCode) + right.Value.Offset;
-                accumulator.AddPoint(sourceLevel, RoundCode(x));
-                hasPlottedComponent = true;
-            }
-
-            if (!hasPlottedComponent && endpoint.HasValue)
+            double? x = ChooseSingleCountCellPosition(sourceLevel, stateCount, accumulator.BoundaryPositions, left, right);
+            if (!x.HasValue && endpoint.HasValue)
             {
                 double boundaryCode = sourceLevel == 0
-                    ? BoundaryPositionCode(0, accumulator.SpacingCode)
-                    : BoundaryPositionCode(stateCount - 2, accumulator.SpacingCode);
-                accumulator.AddPoint(sourceLevel, RoundCode(boundaryCode + endpoint.Value.Offset));
-                hasPlottedComponent = true;
+                    ? BoundaryPositionCode(0, accumulator.BoundaryPositions)
+                    : BoundaryPositionCode(stateCount - 2, accumulator.BoundaryPositions);
+                x = RoundCode(boundaryCode + endpoint.Value.Offset);
             }
 
-            if (hasPlottedComponent)
+            if (x.HasValue)
             {
+                accumulator.AddPoint(sourceLevel, x.Value);
                 accumulator.AddSource(sourceLevel, ClassifyObservationSource(left, right, endpoint));
             }
             else if (sourceLevel == 0)
             {
-                accumulator.LeftOutOfRange[sourceLevel]++;
+                accumulator.AddLeftOutOfRange(sourceLevel);
             }
             else if (sourceLevel == stateCount - 1)
             {
-                accumulator.RightOutOfRange[sourceLevel]++;
+                accumulator.AddRightOutOfRange(sourceLevel);
             }
             else
             {
@@ -388,6 +443,30 @@ public class AnalysisEngine
                     accumulator.SpacingSamples[sourceLevel].Add(gap);
             }
         }
+    }
+
+    private static double? ChooseSingleCountCellPosition(
+        int sourceLevel,
+        int stateCount,
+        IReadOnlyList<double> boundaryPositions,
+        DirectTransitionObservation? left,
+        DirectTransitionObservation? right)
+    {
+        double? leftX = left.HasValue && sourceLevel > 0
+            ? BoundaryPositionCode(sourceLevel - 1, boundaryPositions) + left.Value.Offset
+            : null;
+        double? rightX = right.HasValue && sourceLevel < stateCount - 1
+            ? BoundaryPositionCode(sourceLevel, boundaryPositions) + right.Value.Offset
+            : null;
+
+        if (leftX.HasValue && rightX.HasValue)
+            return RoundCode((leftX.Value + rightX.Value) / 2);
+        if (leftX.HasValue)
+            return RoundCode(leftX.Value);
+        if (rightX.HasValue)
+            return RoundCode(rightX.Value);
+
+        return null;
     }
 
     private static LevelObservationSource ClassifyObservationSource(
@@ -422,7 +501,7 @@ public class AnalysisEngine
             sourceLevel - 1 >= descriptors.Length ||
             sourceLevel >= descriptors.Length)
         {
-            accumulator.UnclassifiedOutOfRange[sourceLevel]++;
+            accumulator.AddUnclassifiedOutOfRange(sourceLevel);
             return;
         }
 
@@ -433,17 +512,17 @@ public class AnalysisEngine
 
         if (leftBoundary.IsValid && lowRaw == leftBoundary.LeftRawGray)
         {
-            accumulator.LeftOutOfRange[sourceLevel]++;
+            accumulator.AddLeftOutOfRange(sourceLevel);
             return;
         }
 
         if (rightBoundary.IsValid && highRaw == rightBoundary.RightRawGray)
         {
-            accumulator.RightOutOfRange[sourceLevel]++;
+            accumulator.AddRightOutOfRange(sourceLevel);
             return;
         }
 
-        accumulator.UnclassifiedOutOfRange[sourceLevel]++;
+        accumulator.AddUnclassifiedOutOfRange(sourceLevel);
     }
 
     private static DirectTransitionObservation? FindDirectTransitionObservation(
@@ -808,8 +887,9 @@ public class AnalysisEngine
         string grayCodeOrder,
         TransitionDetectionMode transitionDetectionMode = TransitionDetectionMode.SlidingWindow)
     {
-        double spacingCode = Math.Max(0, EffectiveLevelSpacingCode(levelSpacingMv, stateCount));
-        var accumulator = new DirectLevelDistributionAccumulator(stateCount, spacingCode);
+        var accumulator = new DirectLevelDistributionAccumulator(
+            stateCount,
+            BuildEvenBoundaryPositions(EffectiveLevelSpacingCode(levelSpacingMv, stateCount), stateCount));
         for (int wl = 0; wl < wlCount; wl++)
         {
             int bitsPerCell = groupModel.Entries[wl].PageIndices.Length;
@@ -842,8 +922,79 @@ public class AnalysisEngine
         return accumulator.ToResult();
     }
 
-    private static double BoundaryPositionCode(int boundaryIndex, double spacingCode) =>
-        Math.Max(0, boundaryIndex) * spacingCode;
+    private static double BoundaryPositionCode(int boundaryIndex, IReadOnlyList<double> boundaryPositions)
+    {
+        if (boundaryIndex < 0 || boundaryIndex >= boundaryPositions.Count)
+            return 0;
+
+        return boundaryPositions[boundaryIndex];
+    }
+
+    private static double[] ResolveBoundaryPositions(AnalysisConfig config, XlcType type, int stateCount)
+    {
+        double fallbackSpacing = EffectiveLevelSpacingCode(config.GetLevelSpacingMv(type), stateCount);
+        return BuildBoundaryPositions(config.GetLevelSpacingCodes(type), fallbackSpacing, stateCount);
+    }
+
+    internal static double[] BuildBoundaryPositions(string spacingText, double fallbackSpacing, int stateCount)
+    {
+        int boundaryCount = Math.Max(0, stateCount - 1);
+        if (boundaryCount == 0)
+            return Array.Empty<double>();
+
+        int spacingCount = Math.Max(0, stateCount - 2);
+        double[] spacings = ParseLevelSpacingCodes(spacingText, spacingCount);
+        if (spacings.Length == 0)
+        {
+            if (fallbackSpacing <= 0)
+                return Array.Empty<double>();
+
+            spacings = Enumerable.Repeat(fallbackSpacing, spacingCount).ToArray();
+        }
+
+        if (spacings.Any(v => v <= 0 || double.IsNaN(v) || double.IsInfinity(v)))
+            return Array.Empty<double>();
+
+        if (spacings.Length != spacingCount)
+            throw new InvalidDataException($"L间距需要 {spacingCount} 个正数，当前输入 {spacings.Length} 个。");
+
+        var positions = new double[boundaryCount];
+        for (int i = 1; i < positions.Length; i++)
+            positions[i] = positions[i - 1] + spacings[i - 1];
+
+        return positions;
+    }
+
+    private static double[] BuildEvenBoundaryPositions(double spacingCode, int stateCount)
+    {
+        if (spacingCode <= 0)
+            return Array.Empty<double>();
+
+        return BuildBoundaryPositions(string.Empty, spacingCode, stateCount);
+    }
+
+    private static double[] ParseLevelSpacingCodes(string spacingText, int expectedCount)
+    {
+        if (string.IsNullOrWhiteSpace(spacingText))
+            return Array.Empty<double>();
+
+        var parts = spacingText
+            .Split([',', ';', '，', '；', ' ', '\t', '\r', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return Array.Empty<double>();
+
+        var values = new double[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!double.TryParse(parts[i], out values[i]))
+                throw new InvalidDataException($"L间距第 {i + 1} 项 '{parts[i]}' 不是有效数字。");
+        }
+
+        if (values.Length == 1 && expectedCount > 1)
+            return Enumerable.Repeat(values[0], expectedCount).ToArray();
+
+        return values;
+    }
 
     public static LevelSpacingSuggestionInfo? BuildLevelSpacingSuggestion(
         StatePeakInfo[] peaks,
@@ -1090,7 +1241,7 @@ public class AnalysisEngine
         if (wlEncoding.Length < 2)
             return Array.Empty<BitBoundaryDescriptor>();
 
-        var pageNamesByRawBit = BuildPageNamesByRawBit(grayCodeOrder, bitsPerCell);
+        var pageNamesByRawBit = BuildPageNamesByRawBit("U-M-L", bitsPerCell);
         var descriptors = new BitBoundaryDescriptor[wlEncoding.Length - 1];
 
         for (int i = 0; i < descriptors.Length; i++)
@@ -1445,7 +1596,7 @@ public class AnalysisEngine
 
         var entry = groupModel.Entries[wl];
         int bitsPerCell = entry.PageIndices.Length;
-        var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder);
+        var decoder = new GrayCodeDecoder(modeEncodings[bitsPerCell], bitsPerCell, config.GrayCodeOrder, config.BitOrder);
         long selectedByteCount = groupModel.Entries
             .Take(wlCount)
             .Sum(e => (long)e.PageIndices.Length * pageTotalBytes);
@@ -1513,6 +1664,8 @@ public class SourceLevelDistributionResult
     public DistributionIntegralInfo[] Integrals { get; init; } = Array.Empty<DistributionIntegralInfo>();
     public ErrorTypeDiagnosticInfo[] Diagnostics { get; init; } = Array.Empty<ErrorTypeDiagnosticInfo>();
     public LevelSpacingSuggestionInfo? SpacingSuggestion { get; init; }
+    public uint[][] DistWlMatrix { get; init; } = Array.Empty<uint[]>();
+    public double[] DistWlBinCodes { get; init; } = Array.Empty<double>();
 }
 
 public class BitBoundaryDistributionResult
@@ -1566,11 +1719,14 @@ public class BitBoundaryDescriptor
 internal sealed class DirectLevelDistributionAccumulator
 {
     private readonly Dictionary<double, double>[] histograms;
+    private readonly Dictionary<int, int> distColumnByCode;
+    private readonly uint[][] distRows;
 
-    public DirectLevelDistributionAccumulator(int stateCount, double spacingCode)
+    public DirectLevelDistributionAccumulator(int stateCount, IReadOnlyList<double> boundaryPositions)
     {
         StateCount = stateCount;
-        SpacingCode = Math.Max(0, spacingCode);
+        BoundaryPositions = boundaryPositions.ToArray();
+        SpacingCode = EstimateRepresentativeSpacing(BoundaryPositions);
         histograms = Enumerable.Range(0, stateCount)
             .Select(_ => new Dictionary<double, double>())
             .ToArray();
@@ -1585,10 +1741,19 @@ internal sealed class DirectLevelDistributionAccumulator
         SpacingSamples = Enumerable.Range(0, stateCount)
             .Select(_ => new List<double>())
             .ToArray();
+        DistBinCodes = BuildToolDistBinCodes(stateCount, BoundaryPositions);
+        distColumnByCode = DistBinCodes
+            .Select((code, index) => (Code: (int)Math.Round(code), Index: index))
+            .GroupBy(p => p.Code)
+            .ToDictionary(g => g.Key, g => g.First().Index + 1);
+        distRows = Enumerable.Range(0, stateCount)
+            .Select(_ => new uint[DistBinCodes.Length > 0 ? DistBinCodes.Length + 3 : 0])
+            .ToArray();
     }
 
     public int StateCount { get; }
     public double SpacingCode { get; }
+    public double[] BoundaryPositions { get; }
     public int[] SourceCounts { get; }
     public double[] LeftOutOfRange { get; }
     public double[] RightOutOfRange { get; }
@@ -1598,6 +1763,15 @@ internal sealed class DirectLevelDistributionAccumulator
     public int[] BothBoundaryObserved { get; }
     public int[] EndpointObserved { get; }
     public List<double>[] SpacingSamples { get; }
+    public double[] DistBinCodes { get; }
+
+    public void AddSourceCell(int level)
+    {
+        if (level < 0 || level >= StateCount)
+            return;
+
+        SourceCounts[level]++;
+    }
 
     public void AddPoint(int level, double x)
     {
@@ -1605,9 +1779,56 @@ internal sealed class DirectLevelDistributionAccumulator
             return;
 
         double rounded = Math.Round(x, 6);
+        int code = (int)Math.Round(rounded);
+        int column = -1;
+        if (DistBinCodes.Length > 0 && !distColumnByCode.TryGetValue(code, out column))
+        {
+            if (code < DistBinCodes[0])
+                AddLeftOutOfRange(level);
+            else if (code > DistBinCodes[^1])
+                AddRightOutOfRange(level);
+            else
+                AddUnclassifiedOutOfRange(level);
+
+            return;
+        }
+
         histograms[level][rounded] = histograms[level].TryGetValue(rounded, out double current)
             ? current + 1
             : 1;
+
+        if (DistBinCodes.Length > 0)
+            distRows[level][column]++;
+    }
+
+    public void AddLeftOutOfRange(int level)
+    {
+        if (level < 0 || level >= StateCount)
+            return;
+
+        LeftOutOfRange[level]++;
+        if (level < distRows.Length && distRows[level].Length > 0)
+            distRows[level][0]++;
+    }
+
+    public void AddRightOutOfRange(int level)
+    {
+        if (level < 0 || level >= StateCount)
+            return;
+
+        RightOutOfRange[level]++;
+        if (level < distRows.Length && distRows[level].Length > 1)
+            distRows[level][^2]++;
+    }
+
+    public void AddUnclassifiedOutOfRange(int level)
+    {
+        if (level < 0 || level >= StateCount)
+            return;
+
+        UnclassifiedOutOfRange[level]++;
+        if (level < distRows.Length && distRows[level].Length > 0)
+            distRows[level][^1]++;
     }
 
     public void AddSource(int level, LevelObservationSource source)
@@ -1647,8 +1868,8 @@ internal sealed class DirectLevelDistributionAccumulator
             curves[level] = points.Select(p => p.Value).ToArray();
             int peakIndex = LocalFindPeakIndex(curves[level]);
             double levelPosition = level == StateCount - 1
-                ? Math.Max(0, StateCount - 2) * SpacingCode
-                : level * SpacingCode;
+                ? BoundaryPositionForLevel(Math.Max(0, StateCount - 2))
+                : BoundaryPositionForLevel(level);
 
             peaks[level] = new StatePeakInfo
             {
@@ -1691,8 +1912,35 @@ internal sealed class DirectLevelDistributionAccumulator
             SourceCounts = SourceCounts.ToArray(),
             Integrals = integrals,
             Diagnostics = Array.Empty<ErrorTypeDiagnosticInfo>(),
-            SpacingSuggestion = BuildSpacingSuggestion()
+            SpacingSuggestion = BuildSpacingSuggestion(),
+            DistWlMatrix = distRows.Select(row => row.ToArray()).ToArray(),
+            DistWlBinCodes = DistBinCodes.ToArray()
         };
+    }
+
+    private static double[] BuildToolDistBinCodes(int stateCount, IReadOnlyList<double> boundaryPositions)
+    {
+        if (stateCount != 8 || boundaryPositions.Count < 7)
+            return Array.Empty<double>();
+
+        var codes = new List<double>(737);
+        for (int code = -127; code <= -1; code++)
+            codes.Add(code);
+
+        for (int boundary = 0; boundary < 6; boundary++)
+        {
+            int center = (int)Math.Round(boundaryPositions[boundary]);
+            codes.Add(center);
+            for (int code = center + 1; code <= center + 79; code++)
+                codes.Add(code);
+        }
+
+        int lastCenter = (int)Math.Round(boundaryPositions[6]);
+        codes.Add(lastCenter);
+        for (int code = lastCenter + 1; code <= lastCenter + 126; code++)
+            codes.Add(code);
+
+        return codes.ToArray();
     }
 
     private LevelSpacingSuggestionInfo? BuildSpacingSuggestion()
@@ -1776,6 +2024,31 @@ internal sealed class DirectLevelDistributionAccumulator
             Confidence = confidence,
             ConfidenceLabel = confidence >= 0.75 ? "高" : confidence >= 0.45 ? "中" : "低"
         };
+    }
+
+    private double BoundaryPositionForLevel(int level)
+    {
+        if (BoundaryPositions.Length == 0)
+            return 0;
+
+        int index = Math.Clamp(level, 0, BoundaryPositions.Length - 1);
+        return BoundaryPositions[index];
+    }
+
+    private static double EstimateRepresentativeSpacing(IReadOnlyList<double> boundaryPositions)
+    {
+        if (boundaryPositions.Count < 2)
+            return 0;
+
+        var gaps = new List<double>();
+        for (int i = 1; i < boundaryPositions.Count; i++)
+        {
+            double gap = boundaryPositions[i] - boundaryPositions[i - 1];
+            if (gap > 0)
+                gaps.Add(gap);
+        }
+
+        return gaps.Count == 0 ? 0 : LocalMedian(gaps);
     }
 
     private static int LocalFindPeakIndex(double[] curve)

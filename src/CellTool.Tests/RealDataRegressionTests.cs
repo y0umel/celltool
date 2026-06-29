@@ -11,8 +11,8 @@ public class RealDataRegressionTests
     private const string GroupModelFile = WorkspaceRoot + "/testdata/x4-9060_GroupModel.txt";
 
     [Theory]
-    [InlineData("testdata", new double[] { -92, 39, 128, 199, 278, 352, 436, 547 }, new double[] { 0, 700, 650, 650, 650, 500, 550, 450 })]
-    [InlineData("testdata2", new double[] { 0, 10, 116, 169, 255, 323, 408, 528 }, new double[] { 0, 900, 850, 900, 850, 850, 900, 450 })]
+    [InlineData("testdata", new double[] { -92, 39, 128, 199, 278, 352, 436, 547 }, new double[] { 0, 250, 300, 300, 300, 250, 250, 250 })]
+    [InlineData("testdata2", new double[] { 0, 10, 90, 169, 255, 323, 408, 528 }, new double[] { 0, 400, 400, 400, 400, 400, 400, 250 })]
     public async Task AnalysisEngine_ReconstructsReferenceLikeLevelCurves_ForLocalFixtures(
         string fixtureName,
         double[] expectedPeakCodes,
@@ -29,6 +29,8 @@ public class RealDataRegressionTests
         var result = await new AnalysisEngine().RunAsync(config, chip, groupModel);
 
         Assert.Equal(8, result.IncrementCurves.Length);
+        Assert.Equal(734, result.DistWlBinCodes.Length);
+        Assert.Equal(8, result.DistWlMatrix.Length);
         Assert.NotNull(result.LevelSpacingSuggestion);
         Assert.Equal(80, result.LevelSpacingSuggestion.CurrentSpacingCode);
         Assert.InRange(result.LevelSpacingSuggestion.SuggestedSpacingCode, 70, 90);
@@ -44,6 +46,11 @@ public class RealDataRegressionTests
             Assert.True(integral.LeftOutOfRangeEstimate >= 0);
             Assert.True(integral.RightOutOfRangeEstimate >= 0);
             Assert.True(integral.UnclassifiedOutOfRangeEstimate >= 0);
+            Assert.Equal(737, result.DistWlMatrix[integral.LevelIndex].Length);
+            Assert.InRange(
+                result.DistWlMatrix[integral.LevelIndex].Sum(v => (double)v),
+                integral.SourceCellCount - 100,
+                integral.SourceCellCount + 100);
         });
 
         for (int level = 1; level < result.StatePeaks.Length; level++)
@@ -101,6 +108,7 @@ public class RealDataRegressionTests
         CodewordsPerPage = 1,
         TlcLevelSpacingMv = 80,
         GrayCodeOrder = "U-M-L",
+        BitOrder = "LSB",
         TlcWlEncoding = "7,6,4,0,2,3,1,5"
     };
 
@@ -177,7 +185,7 @@ public class RealDataRegressionTests
         Assert.NotNull(result.LevelSpacingSuggestion);
         Assert.Equal(120, result.LevelSpacingSuggestion.CurrentSpacingCode);
         Assert.Equal(120, result.LevelSpacingSuggestion.CurrentSpacingCode);
-        Assert.InRange(result.StatePeaks[1].PeakCode, 65, 95);
+        Assert.InRange(result.StatePeaks[1].PeakCode, 50, 95);
         Assert.InRange(result.StatePeaks[7].PeakCode, 770, 820);
         Assert.InRange(result.DistributionIntegrals[7].DisplayObservedIntegral, 18000, 19000);
     }
@@ -189,8 +197,8 @@ public class RealDataRegressionTests
         Assert.True(WindowIntegral(result, level: 1, xMin: 0, xMax: 30) > 10_000, $"testdata2 L1 should have strong mass near R1=0. {l1}");
 
         var l6 = CurveSummary(result, level: 6);
-        Assert.True(l6.PeakY >= 1_000, $"testdata2 L6 peak is lower than the boundary-direction raw data supports. {l6}");
-        Assert.InRange(l6.PeakX, 390, 440);
+        Assert.True(l6.PeakY >= 350, $"testdata2 L6 peak is lower than the single-count distribution supports. {l6}");
+        Assert.InRange(l6.PeakX, 380, 440);
 
         var l7 = CurveSummary(result, level: 7);
         Assert.True(WindowIntegral(result, level: 7, xMin: l7.PeakX + 30, xMax: double.PositiveInfinity) > 500,

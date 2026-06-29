@@ -8,6 +8,8 @@ public class AnalysisResult
     public CodewordErrorStat? ZeroOffsetErrors { get; init; }
     public double[][] IncrementCurves { get; init; } = Array.Empty<double[]>();
     public double[][] IncrementCurveXValues { get; init; } = Array.Empty<double[]>();
+    public uint[][] DistWlMatrix { get; init; } = Array.Empty<uint[]>();
+    public double[] DistWlBinCodes { get; init; } = Array.Empty<double>();
     public DistributionIntegralInfo[] DistributionIntegrals { get; init; } = Array.Empty<DistributionIntegralInfo>();
     public ErrorTypeDiagnosticInfo[] ErrorTypeDiagnostics { get; init; } = Array.Empty<ErrorTypeDiagnosticInfo>();
     public double[] VoltageCodes { get; init; } = Array.Empty<double>();

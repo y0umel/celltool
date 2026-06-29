@@ -82,6 +82,64 @@ public class CsvExporter
         File.WriteAllText(filePath, sb.ToString(), CsvEncoding);
     }
 
+    public void ExportDistWl(string filePath, AnalysisResult result)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? ".");
+        var sb = new StringBuilder();
+        sb.Append("Level,负扫不到");
+        foreach (double code in result.DistWlBinCodes)
+            sb.Append(',').Append(FormatDistCode(code));
+        sb.AppendLine(",正扫不到,异常,阈值Avg,阈值StDev");
+
+        for (int level = 0; level < result.StateCount; level++)
+        {
+            var row = level < result.DistWlMatrix.Length
+                ? result.DistWlMatrix[level]
+                : Array.Empty<uint>();
+            var (avg, stdev) = ComputeDistStats(result.DistWlBinCodes, row);
+
+            sb.Append($"L{level}");
+            for (int i = 0; i < result.DistWlBinCodes.Length + 3; i++)
+                sb.Append(',').Append(i < row.Length ? row[i].ToString() : "0");
+            sb.Append(',').Append(double.IsNaN(avg) ? "NaN" : $"{avg:F4}");
+            sb.Append(',').Append(double.IsNaN(stdev) ? "NaN" : $"{stdev:F4}");
+            sb.AppendLine();
+        }
+
+        File.WriteAllText(filePath, sb.ToString(), CsvEncoding);
+    }
+
+    private static string FormatDistCode(double code) =>
+        Math.Abs(code - Math.Round(code)) < 1e-9
+            ? ((int)Math.Round(code)).ToString()
+            : code.ToString("F2");
+
+    private static (double Avg, double StDev) ComputeDistStats(double[] codes, uint[] row)
+    {
+        double total = 0;
+        double weighted = 0;
+        int count = Math.Min(codes.Length, Math.Max(0, row.Length - 3));
+        for (int i = 0; i < count; i++)
+        {
+            uint value = row[i + 1];
+            total += value;
+            weighted += codes[i] * value;
+        }
+
+        if (total <= 0)
+            return (double.NaN, double.NaN);
+
+        double avg = weighted / total;
+        double variance = 0;
+        for (int i = 0; i < count; i++)
+        {
+            double delta = codes[i] - avg;
+            variance += delta * delta * row[i + 1];
+        }
+
+        return (avg, Math.Sqrt(variance / total));
+    }
+
     private static void AppendLevelSpacingSuggestionSection(StringBuilder sb, LevelSpacingSuggestionInfo? suggestion)
     {
         sb.AppendLine();

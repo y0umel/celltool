@@ -55,7 +55,19 @@ public partial class AppState : ObservableObject
     private double _qlcLevelSpacingMv = 40;
 
     [ObservableProperty]
+    private string _mlcLevelSpacingCodes = "145,145";
+
+    [ObservableProperty]
+    private string _tlcLevelSpacingCodes = "80,80,80,80,80,80";
+
+    [ObservableProperty]
+    private string _qlcLevelSpacingCodes = "40,40,40,40,40,40,40,40,40,40,40,40,40,40";
+
+    [ObservableProperty]
     private string _grayCodeOrder = "U-M-L";
+
+    [ObservableProperty]
+    private string _bitOrder = "MSB";
 
     [ObservableProperty]
     private string _slcWlEncoding = string.Empty;
@@ -125,7 +137,11 @@ public partial class AppState : ObservableObject
             MlcLevelSpacingMv = MlcLevelSpacingMv,
             TlcLevelSpacingMv = TlcLevelSpacingMv,
             QlcLevelSpacingMv = QlcLevelSpacingMv,
+            MlcLevelSpacingCodes = MlcLevelSpacingCodes,
+            TlcLevelSpacingCodes = TlcLevelSpacingCodes,
+            QlcLevelSpacingCodes = QlcLevelSpacingCodes,
             GrayCodeOrder = GrayCodeOrder,
+            BitOrder = BitOrder,
             SlcWlEncoding = SlcWlEncoding,
             MlcWlEncoding = MlcWlEncoding,
             TlcWlEncoding = TlcWlEncoding,
@@ -153,13 +169,28 @@ public partial class AppState : ObservableObject
         MlcLevelSpacingMv = analysis.MlcLevelSpacingMv > 0 ? analysis.MlcLevelSpacingMv : 145;
         TlcLevelSpacingMv = analysis.TlcLevelSpacingMv > 0 ? analysis.TlcLevelSpacingMv : 80;
         QlcLevelSpacingMv = analysis.QlcLevelSpacingMv > 0 ? analysis.QlcLevelSpacingMv : 40;
-        if (analysis.LevelSpacingMv > 0)
+        MlcLevelSpacingCodes = string.IsNullOrWhiteSpace(analysis.MlcLevelSpacingCodes)
+            ? RepeatSpacing(MlcLevelSpacingMv, 2)
+            : analysis.MlcLevelSpacingCodes;
+        TlcLevelSpacingCodes = string.IsNullOrWhiteSpace(analysis.TlcLevelSpacingCodes)
+            ? RepeatSpacing(TlcLevelSpacingMv, 6)
+            : analysis.TlcLevelSpacingCodes;
+        QlcLevelSpacingCodes = string.IsNullOrWhiteSpace(analysis.QlcLevelSpacingCodes)
+            ? RepeatSpacing(QlcLevelSpacingMv, 14)
+            : analysis.QlcLevelSpacingCodes;
+        bool hasSpacingLists = !string.IsNullOrWhiteSpace(analysis.MlcLevelSpacingCodes) ||
+                               !string.IsNullOrWhiteSpace(analysis.TlcLevelSpacingCodes) ||
+                               !string.IsNullOrWhiteSpace(analysis.QlcLevelSpacingCodes);
+        if (analysis.LevelSpacingMv > 0 && !hasSpacingLists)
         {
             ApplyLegacyLevelSpacing(analysis.LevelSpacingMv);
         }
         GrayCodeOrder = string.IsNullOrWhiteSpace(analysis.GrayCodeOrder)
             ? "U-M-L"
             : analysis.GrayCodeOrder;
+        BitOrder = string.IsNullOrWhiteSpace(analysis.BitOrder)
+            ? "MSB"
+            : analysis.BitOrder;
         SlcWlEncoding = analysis.SlcWlEncoding;
         MlcWlEncoding = analysis.MlcWlEncoding;
         TlcWlEncoding = analysis.TlcWlEncoding;
@@ -253,15 +284,21 @@ public partial class AppState : ObservableObject
         {
             case XlcType.MLC:
                 MlcLevelSpacingMv = spacing;
+                MlcLevelSpacingCodes = RepeatSpacing(spacing, 2);
                 break;
             case XlcType.TLC:
                 TlcLevelSpacingMv = spacing;
+                TlcLevelSpacingCodes = RepeatSpacing(spacing, 6);
                 break;
             case XlcType.QLC:
                 QlcLevelSpacingMv = spacing;
+                QlcLevelSpacingCodes = RepeatSpacing(spacing, 14);
                 break;
         }
     }
+
+    private static string RepeatSpacing(double spacing, int count) =>
+        string.Join(",", Enumerable.Repeat(spacing.ToString("0.###"), count));
 
     private void RefreshManufacturers()
     {

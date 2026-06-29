@@ -84,4 +84,53 @@ public class CsvExporterTests
                 File.Delete(filePath);
         }
     }
+
+    [Fact]
+    public void ExportDistWl_WritesToolShapeRows()
+    {
+        string filePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.csv");
+        try
+        {
+            var row = new uint[737];
+            row[0] = 2;
+            row[1] = 3;
+            row[^2] = 4;
+            row[^1] = 5;
+            var result = new AnalysisResult
+            {
+                StateCount = 1,
+                DistWlBinCodes = Enumerable.Range(-127, 734).Select(i => (double)i).ToArray(),
+                DistWlMatrix = [row],
+                DistributionIntegrals =
+                [
+                    new DistributionIntegralInfo
+                    {
+                        LevelIndex = 0,
+                        Label = "L0",
+                        SourceCellCount = 14,
+                        RawObservedIntegral = 3,
+                        DisplayObservedIntegral = 3,
+                        LeftOutOfRangeEstimate = 2,
+                        RightOutOfRangeEstimate = 4,
+                        UnclassifiedOutOfRangeEstimate = 5
+                    }
+                ]
+            };
+
+            new CsvExporter().ExportDistWl(filePath, result);
+
+            var lines = File.ReadAllLines(filePath);
+            Assert.Equal(2, lines.Length);
+            Assert.Equal(740, lines[0].Split(',').Length);
+            Assert.Equal(740, lines[1].Split(',').Length);
+            Assert.StartsWith("Level,负扫不到,-127", lines[0]);
+            Assert.StartsWith("L0,2,3", lines[1]);
+            Assert.Contains(",4,5,", lines[1]);
+        }
+        finally
+        {
+            if (File.Exists(filePath))
+                File.Delete(filePath);
+        }
+    }
 }

@@ -24,7 +24,11 @@ public class AnalysisConfig
     public double MlcLevelSpacingMv { get; set; } = 145;
     public double TlcLevelSpacingMv { get; set; } = 80;
     public double QlcLevelSpacingMv { get; set; } = 40;
+    public string MlcLevelSpacingCodes { get; set; } = string.Empty;
+    public string TlcLevelSpacingCodes { get; set; } = string.Empty;
+    public string QlcLevelSpacingCodes { get; set; } = string.Empty;
     public string GrayCodeOrder { get; set; } = "U-M-L";
+    public string BitOrder { get; set; } = "MSB";
     public string SlcWlEncoding { get; set; } = string.Empty;
     public string MlcWlEncoding { get; set; } = string.Empty;
     public string TlcWlEncoding { get; set; } = string.Empty;
@@ -47,5 +51,13 @@ public class AnalysisConfig
         XlcType.TLC => TlcLevelSpacingMv > 0 ? TlcLevelSpacingMv : LevelSpacingMv,
         XlcType.QLC => QlcLevelSpacingMv > 0 ? QlcLevelSpacingMv : LevelSpacingMv,
         _ => 0
+    };
+
+    public string GetLevelSpacingCodes(XlcType type) => type switch
+    {
+        XlcType.MLC => MlcLevelSpacingCodes,
+        XlcType.TLC => TlcLevelSpacingCodes,
+        XlcType.QLC => QlcLevelSpacingCodes,
+        _ => string.Empty
     };
 }

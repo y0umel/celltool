@@ -272,7 +272,10 @@ public partial class HomeViewModel : ObservableObject
         try
         {
             var config = state.CreateAnalysisConfig();
-            Log($"使用 {state.SelectedChip.Type} 手动L间距: {config.GetLevelSpacingMv(state.SelectedChip.Type):F2} code。");
+            string spacingText = config.GetLevelSpacingCodes(state.SelectedChip.Type);
+            if (string.IsNullOrWhiteSpace(spacingText))
+                spacingText = config.GetLevelSpacingMv(state.SelectedChip.Type).ToString("F2");
+            Log($"使用 {state.SelectedChip.Type} 手动L间距: {spacingText} code；页槽位角色 {config.GrayCodeOrder}；Bit顺序 {config.BitOrder}。");
             var scan = voltageFileReader.ScanDirectoryDetailed(
                 config.InputDirectory,
                 config.VoltageMinMv,
@@ -343,6 +346,7 @@ public partial class HomeViewModel : ObservableObject
         csvExporter.ExportPeakReport(peakPath, result.StatePeaks, result.VoltageCodes);
         csvExporter.ExportBestVoltages(bestPath, result.BestReadVoltages, result.TransitionLabels);
         csvExporter.ExportSummary(summaryPath, result);
+        csvExporter.ExportDistWl(Path.Combine(OutputDirectory, "DIST_WL", "WL0.csv"), result);
 
         if (result.BestVoltageErrors is not null)
         {

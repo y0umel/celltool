@@ -251,7 +251,7 @@ public class AnalysisAlgorithmsTests
     }
 
     [Fact]
-    public void ReconstructSourceLevelDistributions_OverlaysBothAdjacentDirectBoundaries()
+    public void ReconstructSourceLevelDistributions_CountsBothAdjacentDirectBoundariesOnce()
     {
         int[][] rawGrayStates =
         [
@@ -278,13 +278,16 @@ public class AnalysisAlgorithmsTests
             stateCount: 8,
             levelSpacingMv: 80);
 
-        Assert.Equal(2, result.Integrals[2].DisplayObservedIntegral);
-        Assert.Equal([120, 140], result.XValues[2]);
-        Assert.Equal([1, 1], result.Curves[2]);
+        Assert.Equal(1, result.Integrals[2].DisplayObservedIntegral);
+        Assert.Equal([130], result.XValues[2]);
+        Assert.Equal([1], result.Curves[2]);
+        Assert.Equal(734, result.DistWlBinCodes.Length);
+        Assert.Equal(737, result.DistWlMatrix[2].Length);
+        Assert.Equal(1u, result.DistWlMatrix[2][Array.IndexOf(result.DistWlBinCodes, 130) + 1]);
     }
 
     [Fact]
-    public void ReconstructSourceLevelDistributions_OverlaysAdjacentBoundariesWithoutConfidenceAveraging()
+    public void ReconstructSourceLevelDistributions_AveragesAdjacentBoundariesForSingleCountPlacement()
     {
         int[][] rawGrayStates =
         [
@@ -312,14 +315,14 @@ public class AnalysisAlgorithmsTests
             stateCount: 8,
             levelSpacingMv: 80);
 
-        Assert.Equal([120, 160], result.XValues[2]);
-        Assert.Equal([1, 1], result.Curves[2]);
-        Assert.Equal(2, result.Integrals[2].DisplayObservedIntegral);
+        Assert.Equal([140], result.XValues[2]);
+        Assert.Equal([1], result.Curves[2]);
+        Assert.Equal(1, result.Integrals[2].DisplayObservedIntegral);
         Assert.Equal(1, result.Integrals[2].BothBoundaryObservedCount);
     }
 
     [Fact]
-    public void ReconstructSourceLevelDistributions_ManualSpacingChangesBoundaryComponentSeparation()
+    public void ReconstructSourceLevelDistributions_ManualSpacingChangesSingleCountPlacement()
     {
         int[][] rawGrayStates =
         [
@@ -361,9 +364,9 @@ public class AnalysisAlgorithmsTests
             levelSpacingMv: 120);
 
         Assert.Equal([100], overlapped.XValues[2]);
-        Assert.Equal([2], overlapped.Curves[2]);
-        Assert.Equal([140, 180], separated.XValues[2]);
-        Assert.Equal([1, 1], separated.Curves[2]);
+        Assert.Equal([1], overlapped.Curves[2]);
+        Assert.Equal([160], separated.XValues[2]);
+        Assert.Equal([1], separated.Curves[2]);
     }
 
     [Theory]
@@ -776,6 +779,7 @@ public class AnalysisAlgorithmsTests
                 CodewordsPerPage = 1,
                 TlcLevelSpacingMv = 80,
                 GrayCodeOrder = "U-M-L",
+                BitOrder = "LSB",
                 TlcWlEncoding = "7,6,4,0,2,3,1,5",
                 TransitionDetectionMode = mode
             };
@@ -852,6 +856,7 @@ public class AnalysisAlgorithmsTests
                 CodewordsPerPage = 1,
                 TlcLevelSpacingMv = 80,
                 GrayCodeOrder = "U-M-L",
+                BitOrder = "LSB",
                 TlcWlEncoding = "7,6,4,0,2,3,1,5"
             };
             var chip = new ChipInfo
@@ -870,9 +875,121 @@ public class AnalysisAlgorithmsTests
             Assert.Equal(80, spacing80.LevelSpacingSuggestion?.CurrentSpacingCode);
             Assert.Equal(120, spacing120.LevelSpacingSuggestion?.CurrentSpacingCode);
             Assert.Equal([100], spacing80.IncrementCurveXValues[2]);
-            Assert.Equal([2], spacing80.IncrementCurves[2]);
-            Assert.Equal([140, 180], spacing120.IncrementCurveXValues[2]);
-            Assert.Equal([1, 1], spacing120.IncrementCurves[2]);
+            Assert.Equal([1], spacing80.IncrementCurves[2]);
+            Assert.Equal([160], spacing120.IncrementCurveXValues[2]);
+            Assert.Equal([1], spacing120.IncrementCurves[2]);
+            Assert.Equal(734, spacing120.DistWlBinCodes.Length);
+            Assert.Equal(8, spacing120.DistWlMatrix.Length);
+            Assert.All(spacing120.DistWlMatrix, row => Assert.Equal(737, row.Length));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TlcManualSpacingListUsesCumulativeBoundaryPositions()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"celltool-spacing-list-{Guid.NewGuid():N}");
+        string input = Path.Combine(root, "offsets");
+        Directory.CreateDirectory(input);
+        try
+        {
+            const int pageBytes = 1;
+            WriteTlcFile(Path.Combine(root, "source.bin"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-80"), [0], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-60"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-40"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "-20"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "0"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "20"), [6], pageBytes);
+            WriteTlcFile(Path.Combine(input, "40"), [4], pageBytes);
+
+            var config = new AnalysisConfig
+            {
+                InputDirectory = input,
+                OutputDirectory = root,
+                ReferenceFilePath = Path.Combine(root, "source.bin"),
+                VoltageMinCode = -80,
+                VoltageMaxCode = 40,
+                VoltageStepCode = 20,
+                WlCount = 1,
+                StartPage = 0,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                CodewordsPerPage = 1,
+                TlcLevelSpacingMv = 80,
+                TlcLevelSpacingCodes = "80,100,60,80,80,80",
+                GrayCodeOrder = "U-M-L",
+                BitOrder = "LSB",
+                TlcWlEncoding = "7,6,4,0,2,3,1,5"
+            };
+            var chip = new ChipInfo
+            {
+                Type = XlcType.TLC,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            };
+            var groupModel = OneTlcWl();
+
+            var result = await new AnalysisEngine().RunAsync(config, chip, groupModel);
+
+            Assert.Equal([110], result.IncrementCurveXValues[2]);
+            Assert.Equal([1], result.IncrementCurves[2]);
+            Assert.Contains(180, result.DistWlBinCodes);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_TlcManualSpacingListRequiresSixValues()
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"celltool-spacing-list-invalid-{Guid.NewGuid():N}");
+        string input = Path.Combine(root, "offsets");
+        Directory.CreateDirectory(input);
+        try
+        {
+            const int pageBytes = 1;
+            WriteTlcFile(Path.Combine(root, "source.bin"), [4], pageBytes);
+            WriteTlcFile(Path.Combine(input, "0"), [4], pageBytes);
+
+            var config = new AnalysisConfig
+            {
+                InputDirectory = input,
+                OutputDirectory = root,
+                ReferenceFilePath = Path.Combine(root, "source.bin"),
+                VoltageMinCode = 0,
+                VoltageMaxCode = 0,
+                VoltageStepCode = 1,
+                WlCount = 1,
+                StartPage = 0,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                CodewordsPerPage = 1,
+                TlcLevelSpacingMv = 80,
+                TlcLevelSpacingCodes = "80,81,79",
+                GrayCodeOrder = "U-M-L",
+                BitOrder = "LSB",
+                TlcWlEncoding = "7,6,4,0,2,3,1,5"
+            };
+            var chip = new ChipInfo
+            {
+                Type = XlcType.TLC,
+                PageDataBytes = pageBytes,
+                PageRedundantBytes = 0,
+                WlEncoding = [7, 6, 4, 0, 2, 3, 1, 5]
+            };
+
+            var ex = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                new AnalysisEngine().RunAsync(config, chip, OneTlcWl()));
+            Assert.Contains("L间距需要 6 个正数", ex.Message);
         }
         finally
         {
@@ -944,12 +1061,12 @@ public class AnalysisAlgorithmsTests
             int bit = cell % 8;
             int mask = 1 << bit;
             int raw = rawGrayCells[cell];
-            for (int page = 0; page < 3; page++)
-            {
-                int shift = 2 - page;
-                if (((raw >> shift) & 1) != 0)
-                    pages[page * pageBytes + byteIndex] |= (byte)mask;
-            }
+            if ((raw & 0b001) != 0)
+                pages[byteIndex] |= (byte)mask;
+            if ((raw & 0b010) != 0)
+                pages[pageBytes + byteIndex] |= (byte)mask;
+            if ((raw & 0b100) != 0)
+                pages[(2 * pageBytes) + byteIndex] |= (byte)mask;
         }
 
         File.WriteAllBytes(path, pages);

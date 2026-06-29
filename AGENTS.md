@@ -44,10 +44,10 @@ io规范、各种功能落地参考 ExecPlan（详见 celltool/PLANS.md）
 ## Key Design Decisions (from requirements review)
 
 - **Codeword size**: dynamically computed as `(PageDataBytes + PageRedundantBytes) / FrameCount` — DO NOT hardcode.
-- **bin file layout**: per WL, Upper page bytes → Middle page bytes → Lower page bytes, contiguous. No distinction between data and redundancy regions during analysis.
-- **Gray code assembly**: default `U-M-L` (MSB=U, LSB=L). Byte-level endianness does not matter (all pages use the same bit order).
+- **bin file layout**: per WL, configured page slots are read contiguously from GroupModel. The observed target-tool TLC sample uses slot roles `U-M-L`.
+- **Gray code assembly**: `GrayCodeOrder` means page-slot role order, not raw Gray weight order. For observed TLC `U-M-L` slots, raw Gray is assembled as `(L << 2) | (M << 1) | U`; byte bit order is configurable and defaults to `MSB` per reverse-engineered target-tool behavior.
 - **Voltage scan units**: voltage-scan file names are integer voltage codes. One code corresponds to 10mV, but UI ranges, CSV peak/read outputs, and analysis grid points use code units, not mV.
-- **Chart display x-axis**: reconstructed PNG curves carry per-level code x-values. Read-boundary positions use the manually editable L spacing from data configuration (`MLC=145`, `TLC=80`, `QLC=40` code defaults).
+- **Chart display x-axis**: reconstructed PNG curves carry per-level code x-values. Read-boundary positions use manually editable L spacing from data configuration; each mode accepts either one spacing value or a comma-separated per-gap list (`MLC=2 gaps`, `TLC=6 gaps`, `QLC=14 gaps`).
 - **WL mode selection**: each GroupModel row can have 1-4 valid page indices. The valid page count selects SLC/MLC/TLC/QLC mode and the matching manually editable WL encoding.
 - **0.1% boundary / optimal read voltage**: deferred for this reconstruction pass. Do not emit reliable best-read codes until boundary-search validation is reintroduced.
 - **Codeword analysis**: source-vs-reference comparison mode. Codewords are sliced within each page independently. Output two error rates: at best read voltage and at zero offset.
@@ -57,6 +57,13 @@ io规范、各种功能落地参考 ExecPlan（详见 celltool/PLANS.md）
 ## Vread / Vt Reconstruction Ground Rules
 
 These rules are hard constraints for future analysis changes. If generated curves deviate from a reference image, debug within these rules first. Do not change correct low-level reconstruction logic merely to make a wrong curve look plausible.
+
+### Reverse-Engineered Target-Tool Facts
+
+- The confirmed target-tool TLC decoder scans bits MSB-first and assembles observed `U-M-L` page slots into raw Gray as `(L << 2) | (M << 1) | U`; physical level is `index_of(rawGray in WL encoding)`.
+- `calProc` maintains per-cell `RdLogic`, `Last`, `CStats`, `JCnt`, `SJPos`, `EJPos`, stable, error-count, and update-count tables. The confirmed stable path writes `CStats = 0x40 + RdLogic` and `Last = RdLogic`; confirmed transition-window paths update `SJPos/EJPos` as recorded in `CalProcState`.
+- The final target-tool histogram is a per-WL matrix shaped like `uint32[levels][737]` for full TLC `-128..127` / spacing-80 scans: left unable, ordinary bins, right unable, abnormal. The lower scan bound (`-128` in the observed run) is a sentinel, not an ordinary distribution bin.
+- The exact target-tool branch that converts `SJPos/EJPos/CStats` into distribution columns has not been fully recovered. Until it is confirmed, keep the state replay separate from the physically grounded adjacent-Gray transition reconstruction. Do not use a partially inferred `SJ/EJ` window as the sole plotted Vt position.
 
 - Each `Ri` / Vread boundary may only search for direct Gray-code transitions between its two adjacent physical levels, `L(i-1)` and `Li`.
 - A single `Ri` scan can read the relative distributions of both adjacent levels within the configured maximum offset range. The offset is a relative distance from that `Ri`, not an absolute Vt coordinate.

@@ -52,20 +52,28 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="页顺序:" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="页槽位角色:" VerticalAlignment="Center" />
                 <ComboBox Grid.Row="0" Grid.Column="1" Margin="4,0,12,4"
                           ItemsSource="{Binding GrayCodeOrders}"
                           SelectedItem="{Binding GrayCodeOrder}" />
 
-                <TextBlock Grid.Row="0" Grid.Column="2" Margin="0,0,0,4" VerticalAlignment="Center">
+                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Margin="0,0,12,4" VerticalAlignment="Center">
+                    <TextBlock Text="Bit顺序:" VerticalAlignment="Center" />
+                    <ComboBox Width="88" Margin="4,0,0,0"
+                              ItemsSource="{Binding BitOrders}"
+                              SelectedItem="{Binding BitOrder}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,2,0,2" VerticalAlignment="Center">
                     <Run Text="码字大小: " />
                     <Run Text="{Binding CodewordBytes, Mode=OneWay, TargetNullValue='未配置'}" FontWeight="Bold" />
                     <Run Text=" 字节" />
                 </TextBlock>
 
-                <Grid Grid.Row="0" Grid.Column="3" Margin="4,0,0,4">
+                <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="4,2,0,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="72" />
@@ -82,32 +90,32 @@
                     <TextBox Grid.Column="5" Text="{Binding CodewordsPerPage, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
                 </Grid>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="SLC WL编码:" VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,2" />
-                <TextBlock Grid.Row="1" Grid.Column="2" Text="MLC WL编码:" VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding MlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,2" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="SLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,2" />
+                <TextBlock Grid.Row="2" Grid.Column="2" Text="MLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding MlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,2" />
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="TLC WL编码:" VerticalAlignment="Center" />
-                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,0" />
-                <TextBlock Grid.Row="2" Grid.Column="2" Text="QLC WL编码:" VerticalAlignment="Center" />
-                <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding QlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,0" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="TLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding TlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,12,0" />
+                <TextBlock Grid.Row="3" Grid.Column="2" Text="QLC WL编码:" VerticalAlignment="Center" />
+                <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding QlcWlEncoding, UpdateSourceTrigger=PropertyChanged}" Margin="4,2,0,0" />
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="L间距(code):" VerticalAlignment="Center" Margin="0,6,0,0" />
-                <Grid Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Margin="4,6,0,0">
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="L间距(code):" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <Grid Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Margin="4,6,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="MLC" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox Grid.Column="1" Text="{Binding MlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
+                    <TextBox Grid.Column="1" Text="{Binding MlcLevelSpacingCodes, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
                     <TextBlock Grid.Column="2" Text="TLC" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox Grid.Column="3" Text="{Binding TlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
+                    <TextBox Grid.Column="3" Text="{Binding TlcLevelSpacingCodes, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,16,0" />
                     <TextBlock Grid.Column="4" Text="QLC" VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBox Grid.Column="5" Text="{Binding QlcLevelSpacingMv, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBox Grid.Column="5" Text="{Binding QlcLevelSpacingCodes, UpdateSourceTrigger=PropertyChanged}" />
                 </Grid>
             </Grid>
         </GroupBox>

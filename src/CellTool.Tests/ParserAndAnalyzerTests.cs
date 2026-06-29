@@ -98,19 +98,19 @@ public class ParserAndAnalyzerTests
     [Fact]
     public void GrayCodeDecoder_UsesConfiguredPageOrder()
     {
-        var decoder = new GrayCodeDecoder([0, 1, 3, 2], bitsPerCell: 2, grayCodeOrder: "M-U");
+        var decoder = new GrayCodeDecoder([0, 1, 3, 2], bitsPerCell: 2, pageSlotRoleOrder: "M-U", bitOrder: "LSB");
         byte[] wlData = [0b0000_0010, 0b0000_0001];
 
         var states = decoder.DecodeWl(wlData, pageTotalBytes: 1);
 
-        Assert.Equal(3, states[0]);
-        Assert.Equal(1, states[1]);
+        Assert.Equal(1, states[0]);
+        Assert.Equal(3, states[1]);
     }
 
     [Fact]
     public void GrayCodeDecoder_UsesLeadingPageOrderTokensForLowerBitModes()
     {
-        var decoder = new GrayCodeDecoder([0, 1], bitsPerCell: 1, grayCodeOrder: "U-M-L");
+        var decoder = new GrayCodeDecoder([0, 1], bitsPerCell: 1, pageSlotRoleOrder: "U-M-L", bitOrder: "LSB");
         byte[] wlData = [0b0000_0001];
 
         var states = decoder.DecodeWl(wlData, pageTotalBytes: 1);
@@ -121,7 +121,7 @@ public class ParserAndAnalyzerTests
     [Fact]
     public void GrayCodeDecoder_DecodesRawGrayWithoutPhysicalStateMapping()
     {
-        var decoder = new GrayCodeDecoder([7, 6, 4, 0, 2, 3, 1, 5], bitsPerCell: 3, grayCodeOrder: "U-M-L");
+        var decoder = new GrayCodeDecoder([7, 6, 4, 0, 2, 3, 1, 5], bitsPerCell: 3, pageSlotRoleOrder: "U-M-L", bitOrder: "LSB");
         byte[] wlData = [0b0000_0001, 0b0000_0000, 0b0000_0001];
 
         var rawGrayCodes = decoder.DecodeRawGrayWl(wlData, pageTotalBytes: 1);
@@ -129,6 +129,24 @@ public class ParserAndAnalyzerTests
 
         Assert.Equal(5, rawGrayCodes[0]);
         Assert.Equal(7, states[0]);
+    }
+
+    [Fact]
+    public void GrayCodeDecoder_DefaultsToToolTlcPageAndBitOrder()
+    {
+        var decoder = new GrayCodeDecoder([7, 6, 4, 0, 2, 3, 1, 5], bitsPerCell: 3);
+        byte[] wlData =
+        [
+            0b1000_0000,
+            0b1000_0000,
+            0b0000_0000
+        ];
+
+        var rawGrayCodes = decoder.DecodeRawGrayWl(wlData, pageTotalBytes: 1);
+        var states = decoder.DecodeWl(wlData, pageTotalBytes: 1);
+
+        Assert.Equal(3, rawGrayCodes[0]);
+        Assert.Equal(5, states[0]);
     }
 
     [Fact]

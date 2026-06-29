@@ -31,6 +31,7 @@
     <Compile Include="../CellTool/Models/VoltageFileInfo.cs" Link="CellTool/Models/VoltageFileInfo.cs" />
     <Compile Include="../CellTool/Services/AnalysisEngine.cs" Link="CellTool/Services/AnalysisEngine.cs" />
     <Compile Include="../CellTool/Services/AppPaths.cs" Link="CellTool/Services/AppPaths.cs" />
+    <Compile Include="../CellTool/Services/CalProcState.cs" Link="CellTool/Services/CalProcState.cs" />
     <Compile Include="../CellTool/Services/ChartAxisMapper.cs" Link="CellTool/Services/ChartAxisMapper.cs" />
     <Compile Include="../CellTool/Services/ChartRenderer.cs" Link="CellTool/Services/ChartRenderer.cs" />
     <Compile Include="../CellTool/Services/ChipDatabaseService.cs" Link="CellTool/Services/ChipDatabaseService.cs" />

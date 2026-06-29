@@ -31,9 +31,9 @@
   ### 4.1 电压扫描二进制文件
 
   - 命名：{数字}.bin 或无后缀 {数字}，数字为电压 code；1 code = 10mV
-  - 布局：每个 WL 内按 Upper → Middle → Lower 页顺序连续存放
+  - 布局：每个 WL 内按 GroupModel 指定 page 槽位连续读取；观察到的目标工具 TLC 样例槽位角色为 U-M-L
   - 每页大小 = 数据区 + 冗余区（从 Excel 获取，不区分处理）
-  - 字节内 bit 序不关心（所有页同序对比）
+  - 字节内 bit 序影响 cell 顺序，当前提供 MSB/LSB 配置；逆向目标工具样例默认为 MSB-first
 
   ### 4.2 厂家 csv 数据库
 
@@ -56,7 +56,7 @@
    WL/Block             192                WL 数上限
   ───────────────────  ─────────────────  ───────────────────────────────────────
    WL编码               7,6,4,0,2,3,1,5    Vt 方向 raw Gray code 顺序（逗号分隔）
-   L间距(code)          TLC 默认 80         相邻读电压边界的全局重建间距，MLC/TLC/QLC 默认 145/80/40
+   L间距(code)          TLC 默认 80         相邻读电压边界间距，可填单值或逗号分隔序列，MLC/TLC/QLC 分别需要 2/6/14 段
 
   解析规则：
 
@@ -85,7 +85,7 @@
 
   - 分析用 WL 数量、起始页索引
   - 电压 code 范围、code 步长
-  - 格雷码 MSB/LSB 位顺序（默认 U-M-L，全局设定，UI 可切换）
+  - 页槽位角色顺序（默认 U-M-L）和字节 bit 顺序（默认 MSB，全局设定，UI 可切换）
 
   ## 5. 核心分析流水线
 
@@ -99,7 +99,8 @@
 
   ### 5.3 raw Gray code 生成与物理状态映射
 
-  - 从同一 cell 的目标 page 取对应 bit，按 MSB/LSB 配置组装为格雷码
+  - 从同一 cell 的目标 page 取对应 bit，按页槽位角色和字节 bit 顺序组装为 raw Gray
+  - 逆向目标工具 TLC 样例：页槽位为 U-M-L，但 raw Gray 权重为 `(L << 2) | (M << 1) | U`
   - GroupModel 每行有效 page 个数决定模式：1=SLC、2=MLC、3=TLC、4=QLC，并使用数据配置页对应模式的 WL编码
   - raw Gray code 用于 Vt 分布重建：源文件 raw Gray 作为 baseline；WL编码用于推导每个 `R1..Rn` 边界对应的单 page-bit 翻转与其余 page-bit 上下文
   - 需要物理状态时，再通过 WL编码序列映射为物理状态序号（0 ~ 状态数-1）
@@ -111,7 +112,7 @@
   - 对每个电压 code V，将当前 raw Gray 与源文件 raw Gray 都映射为物理 level，但 Vt 重建只接受相邻 Vread 允许的 direct Gray-code 跳变
   - TLC `7,6,4,0,2,3,1,5` 输出 `L0`~`L7` 八条物理源 level 曲线；每条曲线只由该 level 相邻 Vread 的 direct 跳变定位
   - 每个 `Ri` 只扫描 `L(i-1)<->Li`，得到左右相邻 level 相对 `Ri` 的分布；非相邻跳变只用于诊断/OR，不参与曲线或间距
-  - `R1=0`；`R2..Rn` 当前由手动 L 间距定位；自动诊断可按同一源 level 到左右相邻 Gray code 的 direct 跳变 offset 差估计各段间距
+  - `R1=0`；`R2..Rn` 当前由手动 L 间距累计定位；手动值可填单值或逗号分隔序列；自动诊断可按同一源 level 到左右相邻 Gray code 的 direct 跳变 offset 差估计各段间距
   - 相邻 Vread 间距样本不再区分“合法中间 cell”：只要同一 cell 观察到左右相邻 direct 跳变，使用 `左侧Vread offset - 右侧Vread offset`。即便该 cell 超过两侧零偏边界，两个 offset 同向漂移时差值仍是间距证据
   - 单边 direct 跳变可以把 cell 画到其 level 相邻 Vread 外侧；扫压范围内没有合法 direct 跳变的 cell 计入 LOR/ROR
   - 分析结果输出每段 L 间距的来源、样本数、标准差和手动 fallback 状态；不得用 side offset、跨级跳变、图表缩放或积分强制归一化补峰

@@ -93,6 +93,17 @@ public partial class DataConfigViewModel : ObservableObject
         }
     }
 
+    public string BitOrder
+    {
+        get => state.BitOrder;
+        set
+        {
+            if (state.BitOrder == value) return;
+            state.BitOrder = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string SlcWlEncoding
     {
         get => state.SlcWlEncoding;
@@ -137,35 +148,35 @@ public partial class DataConfigViewModel : ObservableObject
         }
     }
 
-    public double MlcLevelSpacingMv
+    public string MlcLevelSpacingCodes
     {
-        get => state.MlcLevelSpacingMv;
+        get => state.MlcLevelSpacingCodes;
         set
         {
-            if (Math.Abs(state.MlcLevelSpacingMv - value) < 0.001) return;
-            state.MlcLevelSpacingMv = value;
+            if (state.MlcLevelSpacingCodes == value) return;
+            state.MlcLevelSpacingCodes = value;
             OnPropertyChanged();
         }
     }
 
-    public double TlcLevelSpacingMv
+    public string TlcLevelSpacingCodes
     {
-        get => state.TlcLevelSpacingMv;
+        get => state.TlcLevelSpacingCodes;
         set
         {
-            if (Math.Abs(state.TlcLevelSpacingMv - value) < 0.001) return;
-            state.TlcLevelSpacingMv = value;
+            if (state.TlcLevelSpacingCodes == value) return;
+            state.TlcLevelSpacingCodes = value;
             OnPropertyChanged();
         }
     }
 
-    public double QlcLevelSpacingMv
+    public string QlcLevelSpacingCodes
     {
-        get => state.QlcLevelSpacingMv;
+        get => state.QlcLevelSpacingCodes;
         set
         {
-            if (Math.Abs(state.QlcLevelSpacingMv - value) < 0.001) return;
-            state.QlcLevelSpacingMv = value;
+            if (state.QlcLevelSpacingCodes == value) return;
+            state.QlcLevelSpacingCodes = value;
             OnPropertyChanged();
         }
     }
@@ -185,7 +196,8 @@ public partial class DataConfigViewModel : ObservableObject
             return pageTotalBytes / state.CodewordsPerPage.Value;
         }
     }
-    public IReadOnlyList<string> GrayCodeOrders { get; } = new[] { "U-M-L", "U-L-M", "M-U-L", "M-L-U", "L-U-M", "L-M-U" };
+    public IReadOnlyList<string> GrayCodeOrders { get; } = new[] { "U-M-L", "L-M-U", "U-L-M", "M-U-L", "M-L-U", "L-U-M" };
+    public IReadOnlyList<string> BitOrders { get; } = new[] { "MSB", "LSB" };
 
     [ObservableProperty]
     private string _groupModelStatus = "未加载组模型";
@@ -215,6 +227,9 @@ public partial class DataConfigViewModel : ObservableObject
             case nameof(AppState.GrayCodeOrder):
                 OnPropertyChanged(nameof(GrayCodeOrder));
                 break;
+            case nameof(AppState.BitOrder):
+                OnPropertyChanged(nameof(BitOrder));
+                break;
             case nameof(AppState.SlcWlEncoding):
                 OnPropertyChanged(nameof(SlcWlEncoding));
                 break;
@@ -227,14 +242,14 @@ public partial class DataConfigViewModel : ObservableObject
             case nameof(AppState.QlcWlEncoding):
                 OnPropertyChanged(nameof(QlcWlEncoding));
                 break;
-            case nameof(AppState.MlcLevelSpacingMv):
-                OnPropertyChanged(nameof(MlcLevelSpacingMv));
+            case nameof(AppState.MlcLevelSpacingCodes):
+                OnPropertyChanged(nameof(MlcLevelSpacingCodes));
                 break;
-            case nameof(AppState.TlcLevelSpacingMv):
-                OnPropertyChanged(nameof(TlcLevelSpacingMv));
+            case nameof(AppState.TlcLevelSpacingCodes):
+                OnPropertyChanged(nameof(TlcLevelSpacingCodes));
                 break;
-            case nameof(AppState.QlcLevelSpacingMv):
-                OnPropertyChanged(nameof(QlcLevelSpacingMv));
+            case nameof(AppState.QlcLevelSpacingCodes):
+                OnPropertyChanged(nameof(QlcLevelSpacingCodes));
                 break;
             case nameof(AppState.SelectedChip):
                 OnPropertyChanged(nameof(CodewordBytes));
